@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Postcard</title>
+<meta name="description" content="Rank the places from your last trip and send friends a postcard of what was actually worth it.">
+<meta name="theme-color" content="#f6f1e7">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✉️</text></svg>">
+<style>
+  /* ---------- Design tokens ---------- */
+  :root {
+    --bg: #f6f1e7;
+    --card: #fffdf8;
+    --ink: #1f2a33;
+    --muted: #6b7680;
+    --line: #e4dccb;
+    --accent: #d2553b;      /* postage-stamp red */
+    --accent-ink: #ffffff;
+    --loved: #2f8f5b;
+    --fine: #c08a1e;
+    --nope: #9a5b5b;
+    --chip: #efe7d6;
+    --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 14px rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161a1e; --card: #20262c; --ink: #eef1f3; --muted: #9aa5ae;
+      --line: #313a42; --chip: #2a3238; --accent: #e86a4f;
+      --loved: #4fbf82; --fine: #e0ac40; --nope: #c98585;
+      --shadow: 0 1px 2px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161a1e; --card: #20262c; --ink: #eef1f3; --muted: #9aa5ae;
+    --line: #313a42; --chip: #2a3238; --accent: #e86a4f;
+    --loved: #4fbf82; --fine: #e0ac40; --nope: #c98585;
+    --shadow: 0 1px 2px rgba(0,0,0,.3);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 480px; margin: 0 auto; padding: 16px 16px 64px; }
+  h1 { font-size: 1.6rem; line-height: 1.2; margin: .4em 0 .3em; letter-spacing: -.01em; }
+  h2 { font-size: 1.2rem; margin: 1.2em 0 .5em; }
+  p { margin: .4em 0 .8em; }
+  .muted { color: var(--muted); }
+  .small { font-size: .875rem; }
+  a { color: var(--accent); }
+
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.05rem; text-decoration: none; color: var(--ink); }
+  .brand .stamp { display: inline-grid; place-items: center; width: 30px; height: 30px; border: 2px dashed var(--accent); border-radius: 4px; font-size: 16px; }
+  header.top { display: flex; justify-content: space-between; align-items: center; padding: 4px 0 8px; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; box-shadow: var(--shadow); margin: 12px 0; }
+
+  button, .btn {
+    font: inherit; cursor: pointer; border-radius: 12px; border: 1px solid var(--line);
+    background: var(--card); color: var(--ink); padding: 12px 16px; text-decoration: none;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .btn-primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .btn-block { display: flex; width: 100%; margin: 8px 0; }
+  .btn-link { background: none; border: none; color: var(--accent); padding: 8px 0; text-decoration: underline; }
+  button:disabled { opacity: .5; cursor: default; }
+
+  label { display: block; font-weight: 600; font-size: .9rem; margin: 12px 0 6px; }
+  input[type=text] {
+    width: 100%; font: inherit; padding: 12px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--card); color: var(--ink);
+  }
+  input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { padding: 8px 12px; border-radius: 999px; background: var(--chip); border: 1px solid transparent; font-size: .9rem; }
+  .chip[aria-pressed="true"] { border-color: var(--accent); background: var(--card); font-weight: 600; }
+
+  .tiers { display: grid; gap: 8px; margin-top: 8px; }
+  .tier-btn { justify-content: flex-start; padding: 14px 16px; font-weight: 600; }
+  .dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; flex: none; }
+  .dot.L { background: var(--loved); } .dot.F { background: var(--fine); } .dot.N { background: var(--nope); }
+
+  .vs { display: grid; gap: 10px; }
+  .vs button { padding: 20px 16px; font-size: 1.05rem; font-weight: 600; flex-direction: column; gap: 2px; }
+  .vs .or { text-align: center; color: var(--muted); font-size: .85rem; }
+
+  .list { list-style: none; padding: 0; margin: 0; }
+  .row { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--line); }
+  .row:first-child { border-top: none; }
+  .rank { color: var(--muted); font-weight: 600; width: 1.6em; flex: none; padding-top: 6px; font-size: .9rem; }
+  .row-main { flex: 1; min-width: 0; }
+  .row-name { font-weight: 600; overflow-wrap: anywhere; }
+  .row-meta { font-size: .8rem; color: var(--muted); }
+  .row-note { font-size: .9rem; margin-top: 4px; font-style: italic; overflow-wrap: anywhere; }
+  .row-actions { display: flex; gap: 12px; margin-top: 6px; flex-wrap: wrap; }
+  .row-actions a, .row-actions button { font-size: .85rem; padding: 4px 0; background: none; border: none; color: var(--accent); text-decoration: none; }
+  .row-actions .saved { color: var(--loved); font-weight: 600; }
+  .score {
+    flex: none; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
+    font-weight: 700; color: #fff; font-size: 1rem;
+  }
+  .score.L { background: var(--loved); } .score.F { background: var(--fine); } .score.N { background: var(--nope); }
+  .del { background: none; border: none; color: var(--muted); font-size: 1.1rem; padding: 4px 6px; }
+
+  .postcard-head { border-bottom: 2px dashed var(--line); padding-bottom: 10px; margin-bottom: 4px; position: relative; }
+  .postcard-head .stampbig { position: absolute; right: 0; top: 0; width: 52px; height: 60px; border: 2px dashed var(--accent); border-radius: 4px; display: grid; place-items: center; font-size: 26px; transform: rotate(4deg); }
+  .postcard-head h1 { padding-right: 64px; }
+
+  .share-box { display: flex; gap: 8px; }
+  .share-box input { font-size: .8rem; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: .9rem; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .progress { height: 6px; background: var(--chip); border-radius: 99px; overflow: hidden; margin: 6px 0 2px; }
+  .progress > div { height: 100%; background: var(--accent); transition: width .3s; }
+  .trip-link { display: flex; justify-content: space-between; align-items: center; text-decoration: none; color: var(--ink); }
+  .center { text-align: center; }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<div class="toast" id="toast"></div>
+
+<script>
+/* =====================================================================
+   CONFIG — paste your Google Apps Script web-app URL here (see README).
+   Leave it empty to run without logging (events print to the console).
+   ===================================================================== */
+const CONFIG = {
+  LOG_URL: "",
+};
+
+/* ---------- Constants ---------- */
+const TIERS = {
+  L: { label: "Loved it", range: [7.0, 10.0] },
+  F: { label: "It was fine", range: [4.0, 6.9] },
+  N: { label: "Wouldn't go back", range: [1.0, 3.9] },
+};
+const TYPES = ["Food & drink", "Sight", "Museum", "Activity", "Nightlife", "Other"];
+const GOAL = 5; // matches the success threshold: rank 5+ places
+
+/* ---------- Tiny helpers ---------- */
+const $ = (sel) => document.querySelector(sel);
+const app = $("#app");
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const rid = () => Math.random().toString(36).slice(2, 10);
+
+function store(key, val) {
+  try {
+    if (val === undefined) return JSON.parse(localStorage.getItem("pc_" + key));
+    localStorage.setItem("pc_" + key, JSON.stringify(val));
+  } catch (e) { return null; }
+}
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 1800);
+}
+
+/* ---------- Anonymous identity + recruit tag ---------- */
+// ?r=alex in an invite link tags that participant so you can tell recruits apart in the sheet.
+const uid = store("uid") || (() => { const u = rid() + rid(); store("uid", u); return u; })();
+const urlRef = new URLSearchParams(location.search).get("r");
+if (urlRef) store("ref", urlRef);
+const ref = store("ref") || "";
+
+/* ---------- Event logging → Google Sheets ---------- */
+function log(event, data = {}) {
+  const row = {
+    ts: new Date().toISOString(), event, uid, ref,
+    role: data.role || "owner",
+    tripId: data.tripId || "", city: data.city || "",
+    numPlaces: data.numPlaces ?? "", seconds: data.seconds ?? "",
+    detail: data.detail ? JSON.stringify(data.detail) : "",
+  };
+  if (!CONFIG.LOG_URL) { console.log("[postcard log]", row); return; }
+  try {
+    fetch(CONFIG.LOG_URL, {
+      method: "POST", mode: "no-cors", keepalive: true,
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(row),
+    });
+  } catch (e) { /* never block the user on logging */ }
+}
+
+/* ---------- Trip storage ---------- */
+// A trip keeps one ranked array per tier; overall rank = Loved, then Fine, then Wouldn't go back.
+function getTrips() { return store("trips") || {}; }
+function getTrip(id) { return getTrips()[id]; }
+function saveTrip(trip) { const all = getTrips(); all[trip.id] = trip; store("trips", all); }
+function deleteTrip(id) { const all = getTrips(); delete all[id]; store("trips", all); }
+const countPlaces = (trip) => trip.tiers.L.length + trip.tiers.F.length + trip.tiers.N.length;
+
+/* ---------- Scoring (Beli-style) ---------- */
+// Each tier owns a band of the 1–10 scale; position within the tier spreads places across the band.
+function scored(trip) {
+  const out = [];
+  for (const t of ["L", "F", "N"]) {
+    const arr = trip.tiers[t], [lo, hi] = TIERS[t].range, n = arr.length;
+    arr.forEach((p, i) => out.push({ ...p, tier: t, idx: i, score: lo + (hi - lo) * (n - i - 0.5) / n }));
+  }
+  return out;
+}
+const fmt = (s) => s.toFixed(1);
+
+/* ---------- Share links: the whole trip lives in the URL, no backend needed ---------- */
+function b64urlEncode(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = ""; bytes.forEach((b) => (bin += String.fromCharCode(b)));
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function b64urlDecode(s) {
+  s = s.replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(s + "===".slice((s.length + 3) % 4));
+  return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+}
+function packTrip(trip) {
+  const p = scored(trip).map((x) => [x.name, x.type, x.note || "", x.tier]);
+  return b64urlEncode(JSON.stringify({ i: trip.id, u: uid, o: trip.owner, c: trip.city, w: trip.when, p }));
+}
+function unpackTrip(s) {
+  const d = JSON.parse(b64urlDecode(s));
+  const trip = { id: d.i, ownerUid: d.u, owner: d.o, city: d.c, when: d.w, tiers: { L: [], F: [], N: [] } };
+  d.p.forEach(([name, type, note, tier]) => trip.tiers[tier].push({ name, type, note }));
+  return trip;
+}
+function shareUrl(trip) {
+  return location.origin + location.pathname + "#/v/" + packTrip(trip);
+}
+const mapsUrl = (name, city) => "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(name + ", " + city);
+
+/* ---------- Example postcard (hard-coded) ---------- */
+const EXAMPLE = {
+  id: "example", ownerUid: "example", owner: "Maya", city: "Lisbon", when: "April 2026",
+  tiers: {
+    L: [
+      { name: "Pastéis de Belém", type: "Food & drink", note: "Go at 8am before the tour buses. Eat them warm with cinnamon." },
+      { name: "Miradouro da Senhora do Monte", type: "Sight", note: "Better sunset than the famous viewpoints, way fewer people." },
+      { name: "Time Out Market", type: "Food & drink", note: "Touristy but worth it for a first-night dinner." },
+      { name: "Day trip to Sintra", type: "Activity", note: "Take the 8:30 train. Do Pena Palace first, then Quinta da Regaleira." },
+    ],
+    F: [
+      { name: "Belém Tower", type: "Sight", note: "Pretty from outside, skip the line to go in." },
+      { name: "LX Factory", type: "Activity", note: "Cool bookstore, otherwise fine." },
+    ],
+    N: [
+      { name: "Fado dinner near Rua Augusta", type: "Nightlife", note: "€35 tourist trap. Go to a tasca in Alfama instead." },
+    ],
+  },
+};
+
+/* ---------- Router ---------- */
+window.addEventListener("hashchange", render);
+function go(hash) { if (location.hash === hash) render(); else location.hash = hash; }
+
+function render() {
+  const h = location.hash.replace(/^#\/?/, "");
+  const [route, arg] = [h.split("/")[0], h.split("/").slice(1).join("/")];
+  window.scrollTo(0, 0);
+  if (route === "new") return viewNew();
+  if (route === "add") return viewAdd(arg);
+  if (route === "trip") return viewTrip(arg);
+  if (route === "v") return viewFriend(arg);
+  if (route === "example") return viewFriend(null, true);
+  return viewHome();
+}
+
+const header = (right = "") => `
+  <header class="top">
+    <a class="brand" href="#/"><span class="stamp">✉</span> Postcard</a>
+    <span>${right}</span>
+  </header>`;
+
+/* ---------- Home ---------- */
+function viewHome() {
+  const trips = Object.values(getTrips()).sort((a, b) => b.created - a.created);
+  app.innerHTML = `
+    ${header()}
+    <h1>Just got back from a trip? Rank it in 5 minutes.</h1>
+    <p class="muted">Sort the places you went into what you loved and what you'd skip. You'll get a ranked postcard to send the next friend who asks for recs.</p>
+    <button class="btn btn-primary btn-block" id="start">Rank a trip</button>
+    <a class="btn btn-block" href="#/example">See an example postcard (Lisbon)</a>
+    ${trips.length ? `
+      <h2>Your postcards</h2>
+      ${trips.map((t) => `
+        <div class="card">
+          <a class="trip-link" href="#/trip/${t.id}">
+            <span><strong>${esc(t.city)}</strong><br><span class="small muted">${esc(t.when || "")} · ${countPlaces(t)} places</span></span>
+            <span>›</span>
+          </a>
+        </div>`).join("")}
+    ` : ""}
+  `;
+  $("#start").onclick = () => go("#/new");
+  if (!render._opened) { render._opened = true; log("app_open"); }
+}
+
+/* ---------- New trip ---------- */
+function viewNew() {
+  const lastName = store("name") || "";
+  app.innerHTML = `
+    ${header()}
+    <h1>Where did you go?</h1>
+    <div class="card">
+      <label for="city">City</label>
+      <input type="text" id="city" placeholder="e.g. Mexico City" autocomplete="off">
+      <label for="when">When <span class="muted small">(optional)</span></label>
+      <input type="text" id="when" placeholder="e.g. August 2026" autocomplete="off">
+      <label for="owner">Your first name <span class="muted small">(shown on your postcard)</span></label>
+      <input type="text" id="owner" placeholder="e.g. Maya" value="${esc(lastName)}" autocomplete="given-name">
+      <button class="btn btn-primary btn-block" id="go" style="margin-top:16px">Start adding places</button>
+    </div>
+  `;
+  $("#city").focus();
+  $("#go").onclick = () => {
+    const city = $("#city").value.trim(), owner = $("#owner").value.trim();
+    if (!city) { toast("Add the city first"); return $("#city").focus(); }
+    store("name", owner);
+    const trip = { id: rid(), city, when: $("#when").value.trim(), owner: owner || "A friend", created: Date.now(), tiers: { L: [], F: [], N: [] }, compares: 0 };
+    saveTrip(trip);
+    log("trip_started", { tripId: trip.id, city });
+    go("#/add/" + trip.id);
+  };
+}
+
+/* ---------- Add a place: name → type → tier → head-to-head comparisons ---------- */
+function viewAdd(id) {
+  const trip = getTrip(id);
+  if (!trip) return go("#/");
+  const n = countPlaces(trip);
+  let type = TYPES[0];
+  app.innerHTML = `
+    ${header(`<a href="#/trip/${trip.id}" class="small">My postcard</a>`)}
+    <p class="small muted" style="margin-bottom:0">${esc(trip.city)} · ${n} place${n === 1 ? "" : "s"} ranked${n < GOAL ? ` · aim for ${GOAL}+` : ""}</p>
+    <div class="progress"><div style="width:${Math.min(100, (n / GOAL) * 100)}%"></div></div>
+    <h1>${n === 0 ? "Add the first place you went" : "Add another place"}</h1>
+    <div class="card">
+      <label for="name">Place name</label>
+      <input type="text" id="name" placeholder="e.g. Pastéis de Belém" autocomplete="off">
+      <label>Type</label>
+      <div class="chips" id="types">
+        ${TYPES.map((t, i) => `<button class="chip" aria-pressed="${i === 0}" data-t="${esc(t)}">${esc(t)}</button>`).join("")}
+      </div>
+      <label for="note">One tip for a friend <span class="muted small">(optional)</span></label>
+      <input type="text" id="note" placeholder="e.g. Go at 8am before the crowds" autocomplete="off">
+      <label>How was it?</label>
+      <div class="tiers">
+        ${Object.entries(TIERS).map(([k, t]) => `<button class="tier-btn" data-tier="${k}"><span class="dot ${k}"></span>${t.label}</button>`).join("")}
+      </div>
+    </div>
+    ${n ? `<button class="btn btn-block" id="done">I'm done. Show my postcard →</button>` : ""}
+  `;
+  $("#name").focus();
+  $("#types").onclick = (e) => {
+    const b = e.target.closest(".chip"); if (!b) return;
+    type = b.dataset.t;
+    document.querySelectorAll("#types .chip").forEach((c) => c.setAttribute("aria-pressed", c === b));
+  };
+  document.querySelectorAll(".tier-btn").forEach((b) => (b.onclick = () => {
+    const name = $("#name").value.trim();
+    if (!name) { toast("Add the place name first"); return $("#name").focus(); }
+    const place = { name, type, note: $("#note").value.trim() };
+    insertWithComparisons(trip, b.dataset.tier, place);
+  }));
+  if ($("#done")) $("#done").onclick = () => finish(trip);
+}
+
+// Binary insertion: ask "which was better?" against the middle of the tier until the spot is found.
+function insertWithComparisons(trip, tier, place) {
+  const arr = trip.tiers[tier];
+  let lo = 0, hi = arr.length, asked = 0;
+  const place_it = (idx) => {
+    arr.splice(idx, 0, place);
+    trip.compares = (trip.compares || 0) + asked;
+    saveTrip(trip);
+    const all = scored(trip), pos = all.findIndex((p) => p.tier === tier && p.idx === idx);
+    log("place_added", { tripId: trip.id, city: trip.city, numPlaces: countPlaces(trip), detail: { tier, type: place.type, comparisons: asked, hasNote: !!place.note } });
+    viewAdded(trip, place, tier, all[pos].score, pos + 1);
+  };
+  const ask = () => {
+    if (lo >= hi) return place_it(lo);
+    const mid = Math.floor((lo + hi) / 2), other = arr[mid];
+    app.innerHTML = `
+      ${header()}
+      <p class="small muted"><span class="dot ${tier}" style="width:10px;height:10px"></span> ${TIERS[tier].label}</p>
+      <h1>Which did you like more?</h1>
+      <div class="vs">
+        <button id="a">${esc(place.name)}<span class="small muted">${esc(place.type)}</span></button>
+        <div class="or">or</div>
+        <button id="b">${esc(other.name)}<span class="small muted">${esc(other.type)}</span></button>
+      </div>
+      <div class="center"><button class="btn-link" id="tie">Too tough to call</button></div>
+    `;
+    $("#a").onclick = () => { asked++; hi = mid; ask(); };
+    $("#b").onclick = () => { asked++; lo = mid + 1; ask(); };
+    $("#tie").onclick = () => { asked++; place_it(mid + 1); };
+  };
+  ask();
+}
+
+function viewAdded(trip, place, tier, score, rank) {
+  const n = countPlaces(trip);
+  app.innerHTML = `
+    ${header()}
+    <div class="card center">
+      <div class="score ${tier}" style="margin:4px auto 10px;width:64px;height:64px;font-size:1.4rem">${fmt(score)}</div>
+      <h1 style="margin-top:0">${esc(place.name)}</h1>
+      <p class="muted">#${rank} of ${n} in ${esc(trip.city)}</p>
+    </div>
+    ${n < GOAL ? `<p class="center small muted">${GOAL - n} more and your postcard is ready to send.</p>` : ""}
+    <button class="btn btn-primary btn-block" id="more">Add another place</button>
+    <button class="btn btn-block" id="done">I'm done. Show my postcard →</button>
+  `;
+  $("#more").onclick = () => go("#/add/" + trip.id);
+  $("#done").onclick = () => finish(trip);
+}
+
+function finish(trip) {
+  const seconds = Math.round((Date.now() - trip.created) / 1000);
+  if (!trip.finishedAt) { trip.finishedAt = Date.now(); saveTrip(trip); }
+  log("ranking_finished", { tripId: trip.id, city: trip.city, numPlaces: countPlaces(trip), seconds, detail: { comparisons: trip.compares || 0 } });
+  go("#/trip/" + trip.id);
+}
+
+/* ---------- Owner's postcard ---------- */
+function rowsHtml(trip, opts = {}) {
+  const saved = opts.saved || {};
+  return `<ol class="list">${scored(trip).map((p, i) => `
+    <li class="row">
+      <span class="rank">${i + 1}</span>
+      <div class="row-main">
+        <div class="row-name">${esc(p.name)}</div>
+        <div class="row-meta">${esc(p.type)} · ${TIERS[p.tier].label}</div>
+        ${p.note ? `<div class="row-note">"${esc(p.note)}"</div>` : ""}
+        <div class="row-actions">
+          <a href="${mapsUrl(p.name, trip.city)}" target="_blank" rel="noopener" data-map="${i}">Open in Maps ↗</a>
+          ${opts.friend ? `<button data-save="${i}" class="${saved[i] ? "saved" : ""}">${saved[i] ? "✓ Saved for my trip" : "☆ Save for my trip"}</button>` : ""}
+          ${opts.owner ? `<button data-del="${p.tier}:${p.idx}" style="color:var(--muted)">Remove</button>` : ""}
+        </div>
+      </div>
+      <span class="score ${p.tier}">${fmt(p.score)}</span>
+    </li>`).join("")}</ol>`;
+}
+
+function viewTrip(id) {
+  const trip = getTrip(id);
+  if (!trip) return go("#/");
+  const n = countPlaces(trip);
+  const url = shareUrl(trip);
+  app.innerHTML = `
+    ${header()}
+    <div class="card">
+      <div class="postcard-head">
+        <div class="stampbig">✉</div>
+        <h1>${esc(trip.owner)}'s ${esc(trip.city)} postcard</h1>
+        <div class="small muted">${trip.when ? esc(trip.when) + " · " : ""}${n} place${n === 1 ? "" : "s"} ranked</div>
+      </div>
+      ${n ? rowsHtml(trip, { owner: true }) : `<p class="muted">No places yet.</p>`}
+    </div>
+    ${n ? `
+      <h2>Send it to a friend</h2>
+      <p class="small muted">Anyone with the link can see your ranking and save places for their own trip. No app needed.</p>
+      <button class="btn btn-primary btn-block" id="share">Share my postcard</button>
+      <div class="share-box"><input type="text" id="url" readonly value="${esc(url)}"><button id="copy">Copy</button></div>
+    ` : ""}
+    <button class="btn btn-block" id="add" style="margin-top:16px">+ Add more places</button>
+    <div class="center"><button class="btn-link small" id="deltrip" style="color:var(--muted)">Delete this postcard</button></div>
+  `;
+  $("#add").onclick = () => go("#/add/" + trip.id);
+  $("#deltrip").onclick = () => {
+    if (!confirm("Delete this postcard?")) return;
+    log("trip_deleted", { tripId: trip.id, city: trip.city, numPlaces: n });
+    deleteTrip(trip.id); go("#/");
+  };
+  app.querySelectorAll("[data-del]").forEach((b) => (b.onclick = () => {
+    const [tier, idx] = b.dataset.del.split(":");
+    trip.tiers[tier].splice(+idx, 1); saveTrip(trip);
+    log("place_removed", { tripId: trip.id, city: trip.city, numPlaces: countPlaces(trip) });
+    viewTrip(trip.id);
+  }));
+  if (!n) return;
+  const logShare = (method) => log("list_shared", { tripId: trip.id, city: trip.city, numPlaces: n, detail: { method } });
+  $("#share").onclick = async () => {
+    const text = `My ${trip.city} recs, ranked:`;
+    if (navigator.share) {
+      try { await navigator.share({ title: `${trip.owner}'s ${trip.city} postcard`, text, url }); logShare("native_share"); }
+      catch (e) { if (e.name !== "AbortError") copy(); }
+    } else copy();
+  };
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(url); } catch (e) { $("#url").select(); document.execCommand("copy"); }
+    toast("Link copied. Paste it in your group chat!");
+    logShare("copy_link");
+  };
+  $("#copy").onclick = copy;
+}
+
+/* ---------- Friend view (what the recipient of a shared link sees) ---------- */
+function viewFriend(payload, isExample = false) {
+  let trip;
+  try { trip = isExample ? EXAMPLE : unpackTrip(payload); }
+  catch (e) { app.innerHTML = `${header()}<h1>This link looks broken</h1><p class="muted">Ask your friend to send it again.</p><a class="btn btn-primary btn-block" href="#/">Go to Postcard</a>`; return; }
+
+  // Opening your own link isn't a friend open.
+  const role = isExample ? "example" : trip.ownerUid === uid ? "owner_preview" : "friend";
+  const base = { role, tripId: trip.id, city: trip.city, numPlaces: countPlaces(trip) };
+  const savedKey = "saved_" + trip.id;
+  const saved = store(savedKey) || {};
+  const list = scored(trip);
+
+  const draw = () => {
+    const savedCount = Object.values(saved).filter(Boolean).length;
+    app.innerHTML = `
+      ${header()}
+      ${isExample ? `<p class="small muted">This is an example. Yours will look like this.</p>` : ""}
+      <div class="card">
+        <div class="postcard-head">
+          <div class="stampbig">✉</div>
+          <h1>${esc(trip.owner)}'s ${esc(trip.city)} postcard</h1>
+          <div class="small muted">${trip.when ? esc(trip.when) + " · " : ""}${list.length} places, ranked from best to skip</div>
+        </div>
+        ${rowsHtml(trip, { friend: true, saved })}
+      </div>
+      ${savedCount ? `<p class="center small">You've saved <strong>${savedCount}</strong> place${savedCount === 1 ? "" : "s"} for your trip. They stay saved on this device.</p>` : ""}
+      <div class="card center">
+        <strong>Back from a trip of your own?</strong>
+        <p class="small muted">Rank the places you went and send your friends a postcard.</p>
+        <button class="btn btn-primary btn-block" id="own">Make my postcard</button>
+      </div>
+    `;
+    app.querySelectorAll("[data-save]").forEach((b) => (b.onclick = () => {
+      const i = +b.dataset.save;
+      saved[i] = !saved[i]; store(savedKey, saved);
+      log(saved[i] ? "friend_saved" : "friend_unsaved", { ...base, detail: { place: list[i].name, rank: i + 1 } });
+      draw();
+    }));
+    app.querySelectorAll("[data-map]").forEach((a) => (a.onclick = () => {
+      const i = +a.dataset.map;
+      log("friend_map_click", { ...base, detail: { place: list[i].name, rank: i + 1 } });
+    }));
+    $("#own").onclick = () => { log("friend_started_own", base); go("#/new"); };
+  };
+  draw();
+  log(isExample ? "example_viewed" : "friend_opened", { ...base, detail: { ownerUid: trip.ownerUid } });
+}
+
+render();
+</script>
+</body>
+</html>
