@@ -12,23 +12,6 @@
 
 const HEADERS = ['timestamp', 'event', 'uid', 'ref', 'role', 'tripId', 'city', 'numPlaces', 'seconds', 'detail'];
 
-function doPost(e) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  try {
-    const d = JSON.parse(e.postData.contents);
-    const sheet = SpreadsheetApp.getActive().getSheetByName('Events') || setup();
-    sheet.appendRow(HEADERS.map(function (h) { return h === 'timestamp' ? d.ts : (d[h] === undefined ? '' : d[h]); }));
-    return ContentService.createTextOutput('ok');
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-function doGet() {
-  return ContentService.createTextOutput('Postcard logger is running.');
-}
-
 function setup() {
   const ss = SpreadsheetApp.getActive();
   const events = ss.getSheetByName('Events') || ss.insertSheet('Events');
@@ -59,4 +42,22 @@ function setup() {
   sum.autoResizeColumns(1, 3);
   Logger.log('Created "Events" and "Summary" tabs in: ' + ss.getName() + '  ' + ss.getUrl());
   return events;
+}
+
+function doPost(e) {
+  if (!e || !e.postData) return setup(); // clicked Run on doPost in the editor: do setup instead
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const d = JSON.parse(e.postData.contents);
+    const sheet = SpreadsheetApp.getActive().getSheetByName('Events') || setup();
+    sheet.appendRow(HEADERS.map(function (h) { return h === 'timestamp' ? d.ts : (d[h] === undefined ? '' : d[h]); }));
+    return ContentService.createTextOutput('ok');
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function doGet() {
+  return ContentService.createTextOutput('Postcard logger is running.');
 }
