@@ -57,5 +57,6 @@ function setup() {
   sum.getRange('B7').setNumberFormat('0%');
   sum.getRange('B5').setNumberFormat('0.0');
   sum.autoResizeColumns(1, 3);
+  Logger.log('Created "Events" and "Summary" tabs in: ' + ss.getName() + '  ' + ss.getUrl());
   return events;
 }
