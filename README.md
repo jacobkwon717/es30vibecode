@@ -6,18 +6,21 @@ This is a single-page mobile web app that tests that question. It does one job: 
 
 ## What a participant does
 
-1. Enter the city they visited (plus an optional date and their first name).
-2. Add each place: name, type (food & drink, sight, museum, activity, nightlife), and an optional tip for a friend.
-3. Sort it into **Loved it / It was fine / Wouldn't go back**.
-4. Answer head-to-head prompts ("Which did you like more?"), just like Beli. A binary search places each new item in about log₂(n) questions.
-5. Get a **postcard**: every place with a 1–10 score (Loved = 7–10, Fine = 4–6.9, Wouldn't go back = 1–3.9).
-6. Share it as a link. Friends who open it see the ranking, tap **Open in Maps**, or **☆ Save for my trip**.
+1. Create an account (first name, email, password). This is required before ranking; the example postcard and friends' links stay open to everyone.
+2. Enter the city they visited (plus an optional date).
+3. Add each place: name, type (food & drink, sight, museum, activity, nightlife), an optional tip for a friend, and optional **photos or video**.
+4. Sort it into **Loved it / It was fine / Wouldn't go back**.
+5. Answer head-to-head prompts ("Which did you like more?"), just like Beli. A binary search places each new item in about log₂(n) questions.
+6. Get a **postcard**: every place with a 1–10 score (Loved = 7–10, Fine = 4–6.9, Wouldn't go back = 1–3.9).
+7. Share it as a link. Friends who open it see the ranking, tap **Open in Maps**, or **☆ Save for my trip**.
 
 There is also a hard-coded example (Maya's Lisbon postcard) at `#/example`, so people can see what they'll get before they start.
 
 ## What's faked or left out (on purpose)
 
-- **No accounts or backend.** Trips live in the browser's localStorage, and the share link carries the entire trip inside the URL. That means no database and no login.
+- **Accounts are faked.** Sign-up and log-in work, but accounts are stored only in that phone's browser (the password is hashed, but there's no server). Logging in on a different device won't find your postcards.
+- **Photos and videos stay on the device.** They're saved in the browser (IndexedDB). Photos are shrunk to 1600px, and videos must be under 100 MB. Friends who open a shared link see rankings and tips, but not media.
+- **No backend.** The share link carries the entire trip (minus media) inside the URL.
 - **No place autocomplete.** Names are free text, and "Open in Maps" runs a Google Maps search for `name, city`.
 - **No recommendations, leaderboards, streaks, lodging, history content, or scam alerts.** These are out of scope for the research question (see the scoping write-up).
 
@@ -35,6 +38,9 @@ Each meaningful action sends one row to a Google Sheet:
 | `friend_opened` | someone *other than the owner* opened a shared link |
 | `friend_map_click` / `friend_saved` | friend engaged with a specific place |
 | `friend_started_own` | friend tapped "Make my postcard" (viral-loop signal) |
+| `signup_viewed` / `account_created` | sign-up funnel: how many drop off at the account step |
+| `logged_in` / `logged_out` | returning use |
+| `media_added` | photos/videos added to an existing place (photos added while ranking are counted in `place_added`) |
 | `example_viewed`, `place_removed`, `trip_deleted` | supporting context |
 
 **Setup (about 5 min):**

@@ -33,11 +33,16 @@ function setup() {
     ['Friend saves', '=COUNTIF(Events!B2:B,"friend_saved")', '"Saving for my trip" taps'],
     ['Friend map clicks', '=COUNTIF(Events!B2:B,"friend_map_click")', ''],
     ['Friends who started their own postcard', '=IFERROR(COUNTUNIQUE(FILTER(Events!C2:C, Events!B2:B="friend_started_own")),0)', 'Viral-loop signal'],
+    ['Saw the sign-up screen', '=IFERROR(COUNTUNIQUE(FILTER(Events!C2:C, Events!B2:B="signup_viewed")),0)', 'Unique devices'],
+    ['Created an account', '=IFERROR(COUNTUNIQUE(FILTER(Events!C2:C, Events!B2:B="account_created")),0)', ''],
+    ['% who finished sign-up', '=IFERROR(B13/B12,0)', 'Drop-off caused by requiring an account'],
+    ['Places with photos or video', '=IFERROR(ROWS(FILTER(Events!J2:J, Events!B2:B="place_added", REGEXMATCH(Events!J2:J, "(photos|videos).:[1-9]"))),0)', 'Media attached while ranking'],
   ];
   sum.getRange(1, 1, rows.length, 3).setValues(rows);
   sum.getRange(1, 1, 1, 3).setFontWeight('bold');
   sum.getRange('B4').setNumberFormat('0%');
   sum.getRange('B7').setNumberFormat('0%');
+  sum.getRange('B14').setNumberFormat('0%');
   sum.getRange('B5').setNumberFormat('0.0');
   sum.autoResizeColumns(1, 3);
   Logger.log('Created "Events" and "Summary" tabs in: ' + ss.getName() + '  ' + ss.getUrl());

@@ -99,6 +99,7 @@
   .row-note { font-size: .9rem; margin-top: 4px; font-style: italic; overflow-wrap: anywhere; }
   .row-actions { display: flex; gap: 12px; margin-top: 6px; flex-wrap: wrap; }
   .row-actions a, .row-actions button { font-size: .85rem; padding: 4px 0; background: none; border: none; color: var(--accent); text-decoration: none; }
+  .row-actions .file-btn { display: inline-block; margin: 0; padding: 4px 0; font-size: .85rem; font-weight: 400; color: var(--accent); cursor: pointer; }
   .row-actions .saved { color: var(--loved); font-weight: 600; }
   .score {
     flex: none; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
@@ -119,6 +120,23 @@
   .progress > div { height: 100%; background: var(--accent); transition: width .3s; }
   .trip-link { display: flex; justify-content: space-between; align-items: center; text-decoration: none; color: var(--ink); }
   .center { text-align: center; }
+  input[type=email], input[type=password] {
+    width: 100%; font: inherit; padding: 12px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--card); color: var(--ink);
+  }
+  .err { color: var(--accent); font-size: .875rem; min-height: 1.2em; margin: 8px 0 0; }
+
+  /* ---------- Photos & video ---------- */
+  .thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .thumb { position: relative; width: 72px; height: 72px; border-radius: 8px; overflow: hidden; background: var(--chip); border: none; padding: 0; flex: none; }
+  .thumb img, .thumb video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+  .thumb .play { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 22px; text-shadow: 0 1px 4px rgba(0,0,0,.6); }
+  .thumb .x { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,.6); color: #fff; font-size: 13px; display: grid; place-items: center; }
+  .file-btn { position: relative; overflow: hidden; }
+  .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .viewer { position: fixed; inset: 0; background: rgba(0,0,0,.92); display: grid; place-items: center; z-index: 10; padding: 16px; }
+  .viewer img, .viewer video { max-width: 100%; max-height: 85vh; border-radius: 8px; }
+  .viewer .close { position: absolute; top: 12px; right: 12px; background: rgba(255,255,255,.15); color: #fff; border: none; font-size: 1.1rem; }
 </style>
 </head>
 <body>
@@ -186,12 +204,101 @@ function log(event, data = {}) {
   } catch (e) { /* never block the user on logging */ }
 }
 
+/* ---------- Accounts (faked for the MVP: they live on this device only, no server) ---------- */
+async function hashPw(pw) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("postcard:" + pw));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+function getAccounts() { return store("accounts") || {}; }
+function currentUser() { const email = store("session"); return email ? getAccounts()[email] || null : null; }
+function signIn(acct) {
+  store("session", acct.email);
+  // Trips made on this device before accounts existed belong to whoever signs in first.
+  const all = getTrips();
+  Object.values(all).forEach((t) => { if (!t.accountId) t.accountId = acct.id; });
+  store("trips", all);
+}
+function signOut() { store("session", null); }
+
+/* ---------- Photos & video (stored on this device in IndexedDB) ---------- */
+const MAX_VIDEO_MB = 100;
+const db = new Promise((resolve, reject) => {
+  const req = indexedDB.open("postcard", 1);
+  req.onupgradeneeded = () => req.result.createObjectStore("media");
+  req.onsuccess = () => resolve(req.result);
+  req.onerror = () => reject(req.error);
+});
+async function idb(mode, fn) {
+  const d = await db;
+  return new Promise((resolve, reject) => {
+    const tx = d.transaction("media", mode), req = fn(tx.objectStore("media"));
+    tx.oncomplete = () => resolve(req && req.result);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+const putMedia = (id, blob) => idb("readwrite", (s) => s.put(blob, id));
+const getMedia = (id) => idb("readonly", (s) => s.get(id));
+const delMedia = (ids) => idb("readwrite", (s) => { ids.forEach((id) => s.delete(id)); });
+const mediaUrls = {};
+async function mediaUrl(id) {
+  if (!mediaUrls[id]) { const blob = await getMedia(id); if (blob) mediaUrls[id] = URL.createObjectURL(blob); }
+  return mediaUrls[id];
+}
+
+// Shrink photos so a trip's worth fits comfortably on the phone; keep videos as-is.
+async function compressImage(file) {
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    return await new Promise((r) => c.toBlob((b) => r(b || file), "image/jpeg", 0.85));
+  } catch (e) { return file; }
+}
+// Saves picked files and returns [{id, kind}] to attach to a place.
+async function saveFiles(files) {
+  const out = [];
+  for (const f of files) {
+    const kind = f.type.startsWith("video") ? "video" : f.type.startsWith("image") ? "image" : null;
+    if (!kind) continue;
+    if (kind === "video" && f.size > MAX_VIDEO_MB * 1e6) { toast(`Videos must be under ${MAX_VIDEO_MB} MB`); continue; }
+    const id = rid() + rid();
+    try { await putMedia(id, kind === "image" ? await compressImage(f) : f); out.push({ id, kind }); }
+    catch (e) { toast("Your phone is out of space for media"); }
+  }
+  if (out.length && navigator.storage && navigator.storage.persist) navigator.storage.persist();
+  return out;
+}
+const thumbsHtml = (media, removable) => (media || []).map((m) => `
+  <button class="thumb" data-view="${m.id}" data-kind="${m.kind}">
+    ${m.kind === "video" ? `<video data-src="${m.id}" muted playsinline preload="metadata"></video><span class="play">▶</span>` : `<img data-src="${m.id}" alt="">`}
+    ${removable ? `<span class="x" data-rm="${m.id}">✕</span>` : ""}
+  </button>`).join("");
+// Fill in thumbnails after render, and open the full-screen viewer on tap.
+function hydrateMedia(root = app) {
+  root.querySelectorAll("[data-src]").forEach(async (el) => {
+    const url = await mediaUrl(el.dataset.src);
+    if (url) el.src = url + (el.tagName === "VIDEO" ? "#t=0.1" : "");
+  });
+  root.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", async (e) => {
+    if (e.target.closest("[data-rm]")) return;
+    const url = await mediaUrl(b.dataset.view); if (!url) return;
+    const v = document.createElement("div"); v.className = "viewer";
+    v.innerHTML = (b.dataset.kind === "video" ? `<video src="${url}" controls autoplay playsinline></video>` : `<img src="${url}" alt="">`) + `<button class="close">✕ Close</button>`;
+    v.onclick = (ev) => { if (ev.target === v || ev.target.classList.contains("close")) v.remove(); };
+    document.body.appendChild(v);
+  }));
+}
+
 /* ---------- Trip storage ---------- */
 // A trip keeps one ranked array per tier; overall rank = Loved, then Fine, then Wouldn't go back.
 function getTrips() { return store("trips") || {}; }
 function getTrip(id) { return getTrips()[id]; }
 function saveTrip(trip) { const all = getTrips(); all[trip.id] = trip; store("trips", all); }
 function deleteTrip(id) { const all = getTrips(); delete all[id]; store("trips", all); }
+function myTrip(id) { const t = getTrip(id), u = currentUser(); return t && u && t.accountId === u.id ? t : null; }
+const placeMediaIds = (trip) => ["L", "F", "N"].flatMap((t) => trip.tiers[t].flatMap((p) => (p.media || []).map((m) => m.id)));
 const countPlaces = (trip) => trip.tiers.L.length + trip.tiers.F.length + trip.tiers.N.length;
 
 /* ---------- Scoring (Beli-style) ---------- */
@@ -256,10 +363,15 @@ const EXAMPLE = {
 window.addEventListener("hashchange", render);
 function go(hash) { if (location.hash === hash) render(); else location.hash = hash; }
 
+// Screens that need an account; anything else (landing, example, a friend's link) is open.
+const NEEDS_ACCOUNT = ["new", "add", "trip"];
+
 function render() {
   const h = location.hash.replace(/^#\/?/, "");
   const [route, arg] = [h.split("/")[0], h.split("/").slice(1).join("/")];
   window.scrollTo(0, 0);
+  if (NEEDS_ACCOUNT.includes(route) && !currentUser()) { store("next", "#/" + h); return viewAuth("signup"); }
+  if (route === "signup" || route === "login") return currentUser() ? go("#/") : viewAuth(route);
   if (route === "new") return viewNew();
   if (route === "add") return viewAdd(arg);
   if (route === "trip") return viewTrip(arg);
@@ -274,14 +386,66 @@ const header = (right = "") => `
     <span>${right}</span>
   </header>`;
 
-/* ---------- Home ---------- */
-function viewHome() {
-  const trips = Object.values(getTrips()).sort((a, b) => b.created - a.created);
+/* ---------- Sign up / log in ---------- */
+function viewAuth(mode) {
+  const signup = mode === "signup";
   app.innerHTML = `
     ${header()}
+    <h1>${signup ? "Create your account" : "Welcome back"}</h1>
+    <p class="muted">${signup ? "Your postcards and photos are saved to your account." : "Log in to see your postcards."}</p>
+    <form class="card" id="auth" novalidate>
+      ${signup ? `
+        <label for="name">First name <span class="muted small">(shown on your postcards)</span></label>
+        <input type="text" id="name" autocomplete="given-name" placeholder="e.g. Maya">` : ""}
+      <label for="email">Email</label>
+      <input type="email" id="email" autocomplete="email" placeholder="you@example.com">
+      <label for="pw">Password</label>
+      <input type="password" id="pw" autocomplete="${signup ? "new-password" : "current-password"}" placeholder="${signup ? "At least 6 characters" : ""}">
+      <p class="err" id="err"></p>
+      <button class="btn btn-primary btn-block" type="submit">${signup ? "Create account" : "Log in"}</button>
+    </form>
+    <p class="center small">${signup
+      ? `Already have an account? <a href="#/login">Log in</a>`
+      : `New to Postcard? <a href="#/signup">Create an account</a>`}</p>
+  `;
+  const err = (m) => { $("#err").textContent = m; };
+  $("#auth").onsubmit = async (e) => {
+    e.preventDefault();
+    const email = $("#email").value.trim().toLowerCase(), pw = $("#pw").value;
+    if (!/^\S+@\S+\.\S+$/.test(email)) return err("Enter a valid email.");
+    const accounts = getAccounts();
+    if (signup) {
+      const name = $("#name").value.trim();
+      if (!name) return err("Add your first name.");
+      if (pw.length < 6) return err("Password needs at least 6 characters.");
+      if (accounts[email]) return err("That email already has an account. Log in instead.");
+      const acct = { id: rid() + rid(), name, email, pw: await hashPw(pw), created: Date.now() };
+      accounts[email] = acct; store("accounts", accounts);
+      signIn(acct);
+      log("account_created");
+    } else {
+      const acct = accounts[email];
+      if (!acct || acct.pw !== await hashPw(pw)) return err("Email or password is incorrect.");
+      signIn(acct);
+      log("logged_in");
+    }
+    const next = store("next") || "#/"; store("next", null);
+    go(next);
+  };
+  (signup ? $("#name") : $("#email")).focus();
+  if (signup) log("signup_viewed");
+}
+
+/* ---------- Home ---------- */
+function viewHome() {
+  const user = currentUser();
+  const trips = user ? Object.values(getTrips()).filter((t) => t.accountId === user.id).sort((a, b) => b.created - a.created) : [];
+  app.innerHTML = `
+    ${header(user ? `<button class="btn-link small" id="logout">Log out</button>` : `<a href="#/login" class="small">Log in</a>`)}
+    ${user ? `<p class="muted" style="margin-bottom:0">Hi ${esc(user.name)} 👋</p>` : ""}
     <h1>Just got back from a trip? Rank it in 5 minutes.</h1>
     <p class="muted">Sort the places you went into what you loved and what you'd skip. You'll get a ranked postcard to send the next friend who asks for recs.</p>
-    <button class="btn btn-primary btn-block" id="start">Rank a trip</button>
+    <button class="btn btn-primary btn-block" id="start">${user ? "Rank a trip" : "Create an account to start"}</button>
     <a class="btn btn-block" href="#/example">See an example postcard (Lisbon)</a>
     ${trips.length ? `
       <h2>Your postcards</h2>
@@ -295,12 +459,13 @@ function viewHome() {
     ` : ""}
   `;
   $("#start").onclick = () => go("#/new");
+  if ($("#logout")) $("#logout").onclick = () => { log("logged_out"); signOut(); render(); };
   if (!render._opened) { render._opened = true; log("app_open"); }
 }
 
 /* ---------- New trip ---------- */
 function viewNew() {
-  const lastName = store("name") || "";
+  const user = currentUser();
   app.innerHTML = `
     ${header()}
     <h1>Where did you go?</h1>
@@ -309,17 +474,14 @@ function viewNew() {
       <input type="text" id="city" placeholder="e.g. Mexico City" autocomplete="off">
       <label for="when">When <span class="muted small">(optional)</span></label>
       <input type="text" id="when" placeholder="e.g. August 2026" autocomplete="off">
-      <label for="owner">Your first name <span class="muted small">(shown on your postcard)</span></label>
-      <input type="text" id="owner" placeholder="e.g. Maya" value="${esc(lastName)}" autocomplete="given-name">
       <button class="btn btn-primary btn-block" id="go" style="margin-top:16px">Start adding places</button>
     </div>
   `;
   $("#city").focus();
   $("#go").onclick = () => {
-    const city = $("#city").value.trim(), owner = $("#owner").value.trim();
+    const city = $("#city").value.trim();
     if (!city) { toast("Add the city first"); return $("#city").focus(); }
-    store("name", owner);
-    const trip = { id: rid(), city, when: $("#when").value.trim(), owner: owner || "A friend", created: Date.now(), tiers: { L: [], F: [], N: [] }, compares: 0 };
+    const trip = { id: rid(), accountId: user.id, city, when: $("#when").value.trim(), owner: user.name, created: Date.now(), tiers: { L: [], F: [], N: [] }, compares: 0 };
     saveTrip(trip);
     log("trip_started", { tripId: trip.id, city });
     go("#/add/" + trip.id);
@@ -328,10 +490,11 @@ function viewNew() {
 
 /* ---------- Add a place: name → type → tier → head-to-head comparisons ---------- */
 function viewAdd(id) {
-  const trip = getTrip(id);
+  const trip = myTrip(id);
   if (!trip) return go("#/");
   const n = countPlaces(trip);
   let type = TYPES[0];
+  const pending = []; // media picked for this place, saved to the device already
   app.innerHTML = `
     ${header(`<a href="#/trip/${trip.id}" class="small">My postcard</a>`)}
     <p class="small muted" style="margin-bottom:0">${esc(trip.city)} · ${n} place${n === 1 ? "" : "s"} ranked${n < GOAL ? ` · aim for ${GOAL}+` : ""}</p>
@@ -346,6 +509,11 @@ function viewAdd(id) {
       </div>
       <label for="note">One tip for a friend <span class="muted small">(optional)</span></label>
       <input type="text" id="note" placeholder="e.g. Go at 8am before the crowds" autocomplete="off">
+      <label>Photos &amp; video <span class="muted small">(optional)</span></label>
+      <div class="thumbs" id="pending"></div>
+      <label class="btn file-btn" style="display:inline-flex;margin:8px 0 0;font-weight:400">📷 Add photos or video
+        <input type="file" id="files" accept="image/*,video/*" multiple>
+      </label>
       <label>How was it?</label>
       <div class="tiers">
         ${Object.entries(TIERS).map(([k, t]) => `<button class="tier-btn" data-tier="${k}"><span class="dot ${k}"></span>${t.label}</button>`).join("")}
@@ -354,6 +522,21 @@ function viewAdd(id) {
     ${n ? `<button class="btn btn-block" id="done">I'm done. Show my postcard →</button>` : ""}
   `;
   $("#name").focus();
+  const drawPending = () => {
+    $("#pending").innerHTML = thumbsHtml(pending, true);
+    hydrateMedia($("#pending"));
+    $("#pending").querySelectorAll("[data-rm]").forEach((x) => (x.onclick = () => {
+      const i = pending.findIndex((m) => m.id === x.dataset.rm);
+      delMedia([pending[i].id]); pending.splice(i, 1); drawPending();
+    }));
+  };
+  $("#files").onchange = async (e) => {
+    const files = [...e.target.files]; e.target.value = "";
+    if (!files.length) return;
+    toast("Adding…");
+    pending.push(...await saveFiles(files));
+    drawPending();
+  };
   $("#types").onclick = (e) => {
     const b = e.target.closest(".chip"); if (!b) return;
     type = b.dataset.t;
@@ -362,7 +545,7 @@ function viewAdd(id) {
   document.querySelectorAll(".tier-btn").forEach((b) => (b.onclick = () => {
     const name = $("#name").value.trim();
     if (!name) { toast("Add the place name first"); return $("#name").focus(); }
-    const place = { name, type, note: $("#note").value.trim() };
+    const place = { name, type, note: $("#note").value.trim(), media: pending.slice() };
     insertWithComparisons(trip, b.dataset.tier, place);
   }));
   if ($("#done")) $("#done").onclick = () => finish(trip);
@@ -377,7 +560,7 @@ function insertWithComparisons(trip, tier, place) {
     trip.compares = (trip.compares || 0) + asked;
     saveTrip(trip);
     const all = scored(trip), pos = all.findIndex((p) => p.tier === tier && p.idx === idx);
-    log("place_added", { tripId: trip.id, city: trip.city, numPlaces: countPlaces(trip), detail: { tier, type: place.type, comparisons: asked, hasNote: !!place.note } });
+    log("place_added", { tripId: trip.id, city: trip.city, numPlaces: countPlaces(trip), detail: { tier, type: place.type, comparisons: asked, hasNote: !!place.note, photos: place.media.filter((m) => m.kind === "image").length, videos: place.media.filter((m) => m.kind === "video").length } });
     viewAdded(trip, place, tier, all[pos].score, pos + 1);
   };
   const ask = () => {
@@ -409,11 +592,13 @@ function viewAdded(trip, place, tier, score, rank) {
       <div class="score ${tier}" style="margin:4px auto 10px;width:64px;height:64px;font-size:1.4rem">${fmt(score)}</div>
       <h1 style="margin-top:0">${esc(place.name)}</h1>
       <p class="muted">#${rank} of ${n} in ${esc(trip.city)}</p>
+      ${place.media.length ? `<div class="thumbs" style="justify-content:center">${thumbsHtml(place.media)}</div>` : ""}
     </div>
     ${n < GOAL ? `<p class="center small muted">${GOAL - n} more and your postcard is ready to send.</p>` : ""}
     <button class="btn btn-primary btn-block" id="more">Add another place</button>
     <button class="btn btn-block" id="done">I'm done. Show my postcard →</button>
   `;
+  hydrateMedia();
   $("#more").onclick = () => go("#/add/" + trip.id);
   $("#done").onclick = () => finish(trip);
 }
@@ -435,10 +620,12 @@ function rowsHtml(trip, opts = {}) {
         <div class="row-name">${esc(p.name)}</div>
         <div class="row-meta">${esc(p.type)} · ${TIERS[p.tier].label}</div>
         ${p.note ? `<div class="row-note">"${esc(p.note)}"</div>` : ""}
+        ${opts.owner && p.media && p.media.length ? `<div class="thumbs">${thumbsHtml(p.media)}</div>` : ""}
         <div class="row-actions">
           <a href="${mapsUrl(p.name, trip.city)}" target="_blank" rel="noopener" data-map="${i}">Open in Maps ↗</a>
           ${opts.friend ? `<button data-save="${i}" class="${saved[i] ? "saved" : ""}">${saved[i] ? "✓ Saved for my trip" : "☆ Save for my trip"}</button>` : ""}
-          ${opts.owner ? `<button data-del="${p.tier}:${p.idx}" style="color:var(--muted)">Remove</button>` : ""}
+          ${opts.owner ? `<label class="file-btn">📷 Add media<input type="file" accept="image/*,video/*" multiple data-addmedia="${p.tier}:${p.idx}"></label>
+          <button data-del="${p.tier}:${p.idx}" style="color:var(--muted)">Remove</button>` : ""}
         </div>
       </div>
       <span class="score ${p.tier}">${fmt(p.score)}</span>
@@ -446,7 +633,7 @@ function rowsHtml(trip, opts = {}) {
 }
 
 function viewTrip(id) {
-  const trip = getTrip(id);
+  const trip = myTrip(id);
   if (!trip) return go("#/");
   const n = countPlaces(trip);
   const url = shareUrl(trip);
@@ -462,7 +649,7 @@ function viewTrip(id) {
     </div>
     ${n ? `
       <h2>Send it to a friend</h2>
-      <p class="small muted">Anyone with the link can see your ranking and save places for their own trip. No app needed.</p>
+      <p class="small muted">Anyone with the link can see your ranking and tips, and save places for their own trip. No account needed. Your photos and videos stay on your phone for now.</p>
       <button class="btn btn-primary btn-block" id="share">Share my postcard</button>
       <div class="share-box"><input type="text" id="url" readonly value="${esc(url)}"><button id="copy">Copy</button></div>
     ` : ""}
@@ -473,11 +660,23 @@ function viewTrip(id) {
   $("#deltrip").onclick = () => {
     if (!confirm("Delete this postcard?")) return;
     log("trip_deleted", { tripId: trip.id, city: trip.city, numPlaces: n });
-    deleteTrip(trip.id); go("#/");
+    delMedia(placeMediaIds(trip)); deleteTrip(trip.id); go("#/");
   };
+  hydrateMedia();
+  app.querySelectorAll("[data-addmedia]").forEach((inp) => (inp.onchange = async () => {
+    const files = [...inp.files]; if (!files.length) return;
+    const [tier, idx] = inp.dataset.addmedia.split(":");
+    toast("Adding…");
+    const added = await saveFiles(files);
+    const place = trip.tiers[tier][+idx];
+    place.media = (place.media || []).concat(added); saveTrip(trip);
+    log("media_added", { tripId: trip.id, city: trip.city, numPlaces: n, detail: { photos: added.filter((m) => m.kind === "image").length, videos: added.filter((m) => m.kind === "video").length } });
+    viewTrip(trip.id);
+  }));
   app.querySelectorAll("[data-del]").forEach((b) => (b.onclick = () => {
     const [tier, idx] = b.dataset.del.split(":");
-    trip.tiers[tier].splice(+idx, 1); saveTrip(trip);
+    const [gone] = trip.tiers[tier].splice(+idx, 1); saveTrip(trip);
+    delMedia((gone.media || []).map((m) => m.id));
     log("place_removed", { tripId: trip.id, city: trip.city, numPlaces: countPlaces(trip) });
     viewTrip(trip.id);
   }));
