@@ -23,7 +23,7 @@ There is also a hard-coded example (Maya's Lisbon postcard) at `#/example`, so p
 - **Photos and videos stay on the device.** They're saved in the browser (IndexedDB). Photos are shrunk to 1600px, and videos must be under 100 MB. Friends who open a shared link see rankings and tips, but not media.
 - **No backend.** The share link carries the entire trip (minus media) inside the URL.
 - **City search uses [Photon](https://photon.komoot.io)**, a free OpenStreetMap geocoder with no API key. If someone types a city without picking a suggestion, the app looks it up once. If the service is down, the trip still works and gets pinned later.
-- **The map uses [Leaflet](https://leafletjs.com)** (bundled in `vendor/leaflet/`) with free CARTO map tiles.
+- **The map uses [Leaflet](https://leafletjs.com)** (bundled in `vendor/leaflet/`) with free OpenStreetMap tiles (no API key). A low-detail world outline ([world-atlas](https://github.com/topojson/world-atlas), bundled in `vendor/world/`) sits underneath, so countries and pins still show if the tiles can't load.
 - **No autocomplete for individual places** (restaurants, sights). Those names are free text, and "Open in Maps" runs a Google Maps search for `name, city`.
 - **No recommendations, leaderboards, streaks, lodging, history content, or scam alerts.** These are out of scope for the research question (see the scoping write-up).
 
