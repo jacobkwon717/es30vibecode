@@ -7,6 +7,8 @@
 <meta name="description" content="Rank the places from your last trip and send friends a postcard of what was actually worth it.">
 <meta name="theme-color" content="#f6f1e7">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✉️</text></svg>">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<script src="vendor/leaflet/leaflet.js"></script>
 <style>
   /* ---------- Design tokens ---------- */
   :root {
@@ -114,7 +116,7 @@
 
   .share-box { display: flex; gap: 8px; }
   .share-box input { font-size: .8rem; }
-  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: .9rem; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast { z-index: 3000; position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: .9rem; opacity: 0; transition: opacity .2s; pointer-events: none; }
   .toast.show { opacity: 1; }
   .progress { height: 6px; background: var(--chip); border-radius: 99px; overflow: hidden; margin: 6px 0 2px; }
   .progress > div { height: 100%; background: var(--accent); transition: width .3s; }
@@ -134,9 +136,20 @@
   .thumb .x { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,.6); color: #fff; font-size: 13px; display: grid; place-items: center; }
   .file-btn { position: relative; overflow: hidden; }
   .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-  .viewer { position: fixed; inset: 0; background: rgba(0,0,0,.92); display: grid; place-items: center; z-index: 10; padding: 16px; }
+  .viewer { position: fixed; inset: 0; background: rgba(0,0,0,.92); display: grid; place-items: center; z-index: 2000; padding: 16px; }
   .viewer img, .viewer video { max-width: 100%; max-height: 85vh; border-radius: 8px; }
   .viewer .close { position: absolute; top: 12px; right: 12px; background: rgba(255,255,255,.15); color: #fff; border: none; font-size: 1.1rem; }
+
+  /* ---------- Location search + travel map ---------- */
+  .ac { list-style: none; margin: 4px 0 0; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); box-shadow: var(--shadow); }
+  .ac li { padding: 10px; border-radius: 8px; cursor: pointer; }
+  .ac li.on, .ac li:hover { background: var(--chip); }
+  .credit { font-size: .7rem; color: var(--muted); margin-top: 4px; }
+  .map { height: 260px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); margin-top: 10px; position: relative; z-index: 0; background: var(--chip); }
+  .pin span { display: block; width: 20px; height: 20px; background: var(--accent); border: 3px solid #fff; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+  .pin-new span { background: var(--loved); animation: drop .7s cubic-bezier(.3,1.6,.6,1); }
+  @keyframes drop { from { transform: translateY(-40px) rotate(-45deg); opacity: 0; } to { transform: rotate(-45deg); opacity: 1; } }
+  .leaflet-popup-content a { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -291,6 +304,107 @@ function hydrateMedia(root = app) {
   }));
 }
 
+/* ---------- Location search (Photon: free OpenStreetMap geocoder, no API key) ---------- */
+const GEOCODER = "https://photon.komoot.io/api/";
+async function geocode(q, limit = 5, signal) {
+  const res = await fetch(`${GEOCODER}?q=${encodeURIComponent(q)}&limit=${limit + 3}&lang=en&layer=city&layer=state&layer=country`, { signal });
+  if (!res.ok) throw new Error("geocoder " + res.status);
+  const seen = new Set(), out = [];
+  for (const f of (await res.json()).features || []) {
+    const p = f.properties || {}, [lng, lat] = f.geometry.coordinates;
+    const r = { name: p.name, region: p.state && p.state !== p.name ? p.state : "", country: p.country && p.country !== p.name ? p.country : "", lat, lng };
+    const key = placeLabel(r);
+    if (!r.name || seen.has(key)) continue;
+    seen.add(key); out.push(r);
+  }
+  return out.slice(0, limit);
+}
+const placeLabel = (r) => [r.name, r.region, r.country].filter(Boolean).join(", ");
+// Best-effort lookup for free-typed text. Never throws or hangs: null = no match, undefined = service unreachable.
+async function geocodeOne(q) {
+  const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 4000);
+  try { return (await geocode(q, 1, ctrl.signal))[0] || null; } catch (e) { return undefined; } finally { clearTimeout(timer); }
+}
+
+// Suggest-as-you-type dropdown under an input. onPick(result) fires on selection, onPick(null) when the text changes.
+function attachPlaceSearch(input, list, onPick) {
+  let results = [], active = -1, timer, ctrl;
+  const close = () => { list.hidden = true; list.innerHTML = ""; active = -1; };
+  const draw = () => {
+    list.hidden = !results.length;
+    list.innerHTML = results.map((r, i) => `<li role="option" data-i="${i}" class="${i === active ? "on" : ""}">📍 <strong>${esc(r.name)}</strong> <span class="muted small">${esc([r.region, r.country].filter(Boolean).join(", "))}</span></li>`).join("");
+  };
+  const pick = (i) => { const r = results[i]; if (!r) return; input.value = placeLabel(r); onPick(r); close(); };
+  input.addEventListener("input", () => {
+    onPick(null);
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (q.length < 2) { results = []; return close(); }
+    timer = setTimeout(async () => {
+      if (ctrl) ctrl.abort();
+      ctrl = new AbortController();
+      try {
+        const r = await geocode(q, 5, ctrl.signal);
+        if (input.value.trim() !== q) return;
+        results = r; active = -1; draw();
+      } catch (e) { if (e.name !== "AbortError") { results = []; close(); } }
+    }, 250);
+  });
+  input.addEventListener("keydown", (e) => {
+    if (list.hidden) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      active = (active + (e.key === "ArrowDown" ? 1 : -1) + results.length) % results.length; draw();
+    } else if (e.key === "Enter" && active >= 0) { e.preventDefault(); pick(active); }
+    else if (e.key === "Escape") close();
+  });
+  list.addEventListener("mousedown", (e) => e.preventDefault()); // keep focus in the input while tapping a suggestion
+  list.addEventListener("click", (e) => { const li = e.target.closest("li"); if (li) pick(+li.dataset.i); });
+  input.addEventListener("blur", () => setTimeout(close, 150));
+}
+
+/* ---------- Travel map (Leaflet + CARTO tiles) ---------- */
+let activeMap = null;
+function drawMap(el, trips, highlightId) {
+  if (activeMap) { activeMap.remove(); activeMap = null; }
+  if (!window.L) { el.innerHTML = `<p class="muted small center" style="padding:16px">Map unavailable right now.</p>`; return; }
+  const pins = trips.filter((t) => typeof t.lat === "number");
+  const map = L.map(el, { worldCopyJump: true, scrollWheelZoom: false, minZoom: 1 }).setView([20, 0], 1);
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? "dark_all" : "light_all"}/{z}/{x}/{y}{r}.png`, {
+    subdomains: "abcd", maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  }).addTo(map);
+  const markers = pins.map((t) => L.marker([t.lat, t.lng], {
+    icon: L.divIcon({ className: "pin" + (t.id === highlightId ? " pin-new" : ""), html: "<span></span>", iconSize: [26, 26], iconAnchor: [13, 26], popupAnchor: [0, -24] }),
+  }).addTo(map).bindPopup(`<strong>${esc(t.city)}</strong>${t.country ? ", " + esc(t.country) : ""}<br>${countPlaces(t)} places ranked<br><a href="#/trip/${t.id}">Open postcard →</a>`));
+  if (pins.length > 1) map.fitBounds(pins.map((t) => [t.lat, t.lng]), { padding: [30, 30], maxZoom: 4 });
+  else if (pins.length === 1) map.setView([pins[0].lat, pins[0].lng], 3);
+  const hi = pins.findIndex((t) => t.id === highlightId);
+  if (hi >= 0) setTimeout(() => markers[hi].openPopup(), 700);
+  activeMap = map;
+}
+const mapStats = (trips) => {
+  const pins = trips.filter((t) => typeof t.lat === "number");
+  const countries = new Set(pins.map((t) => t.country).filter(Boolean)).size;
+  return `${pins.length} cit${pins.length === 1 ? "y" : "ies"}${countries ? ` · ${countries} countr${countries === 1 ? "y" : "ies"}` : ""}`;
+};
+// Pin trips made before location search existed (or whose lookup failed) without blocking the screen.
+async function backfillCoords(trips) {
+  let changed = false;
+  for (const t of trips) {
+    if (typeof t.lat === "number" || t.geoTried) continue;
+    const r = await geocodeOne(t.city);
+    if (r === undefined) break; // service down: try again next time
+    const fresh = getTrip(t.id); if (!fresh) continue;
+    fresh.geoTried = true;
+    if (r) { Object.assign(fresh, { lat: r.lat, lng: r.lng, country: r.country || r.name }); Object.assign(t, fresh); changed = true; }
+    saveTrip(fresh);
+  }
+  return changed;
+}
+const myTrips = () => { const u = currentUser(); return u ? Object.values(getTrips()).filter((t) => t.accountId === u.id).sort((a, b) => b.created - a.created) : []; };
+
 /* ---------- Trip storage ---------- */
 // A trip keeps one ranked array per tier; overall rank = Loved, then Fine, then Wouldn't go back.
 function getTrips() { return store("trips") || {}; }
@@ -439,7 +553,7 @@ function viewAuth(mode) {
 /* ---------- Home ---------- */
 function viewHome() {
   const user = currentUser();
-  const trips = user ? Object.values(getTrips()).filter((t) => t.accountId === user.id).sort((a, b) => b.created - a.created) : [];
+  const trips = myTrips();
   app.innerHTML = `
     ${header(user ? `<button class="btn-link small" id="logout">Log out</button>` : `<a href="#/login" class="small">Log in</a>`)}
     ${user ? `<p class="muted" style="margin-bottom:0">Hi ${esc(user.name)} 👋</p>` : ""}
@@ -448,6 +562,9 @@ function viewHome() {
     <button class="btn btn-primary btn-block" id="start">${user ? "Rank a trip" : "Create an account to start"}</button>
     <a class="btn btn-block" href="#/example">See an example postcard (Lisbon)</a>
     ${trips.length ? `
+      <h2>Your travel map</h2>
+      <div class="small muted" id="mapstats">${mapStats(trips)}</div>
+      <div class="map" id="map"></div>
       <h2>Your postcards</h2>
       ${trips.map((t) => `
         <div class="card">
@@ -460,6 +577,12 @@ function viewHome() {
   `;
   $("#start").onclick = () => go("#/new");
   if ($("#logout")) $("#logout").onclick = () => { log("logged_out"); signOut(); render(); };
+  if (trips.length) {
+    drawMap($("#map"), trips);
+    backfillCoords(trips).then((changed) => {
+      if (changed && $("#map")) { drawMap($("#map"), trips); $("#mapstats").textContent = mapStats(trips); }
+    });
+  }
   if (!render._opened) { render._opened = true; log("app_open"); }
 }
 
@@ -471,19 +594,31 @@ function viewNew() {
     <h1>Where did you go?</h1>
     <div class="card">
       <label for="city">City</label>
-      <input type="text" id="city" placeholder="e.g. Mexico City" autocomplete="off">
+      <input type="text" id="city" placeholder="Start typing, e.g. Mexico City" autocomplete="off" role="combobox" aria-controls="city-ac">
+      <ul class="ac" id="city-ac" role="listbox" hidden></ul>
+      <div class="credit">Suggestions by Photon · © OpenStreetMap</div>
       <label for="when">When <span class="muted small">(optional)</span></label>
       <input type="text" id="when" placeholder="e.g. August 2026" autocomplete="off">
       <button class="btn btn-primary btn-block" id="go" style="margin-top:16px">Start adding places</button>
     </div>
   `;
+  let picked = null;
+  attachPlaceSearch($("#city"), $("#city-ac"), (r) => { picked = r; });
   $("#city").focus();
-  $("#go").onclick = () => {
-    const city = $("#city").value.trim();
-    if (!city) { toast("Add the city first"); return $("#city").focus(); }
-    const trip = { id: rid(), accountId: user.id, city, when: $("#when").value.trim(), owner: user.name, created: Date.now(), tiers: { L: [], F: [], N: [] }, compares: 0 };
+  $("#go").onclick = async () => {
+    const typed = $("#city").value.trim();
+    if (!typed) { toast("Add the city first"); return $("#city").focus(); }
+    $("#go").disabled = true;
+    // Didn't pick a suggestion? Look up the typed text once so the trip can still get a pin.
+    const loc = picked || await geocodeOne(typed);
+    const city = picked ? picked.name : typed;
+    const trip = {
+      id: rid(), accountId: user.id, city, when: $("#when").value.trim(), owner: user.name, created: Date.now(),
+      tiers: { L: [], F: [], N: [] }, compares: 0,
+      ...(loc ? { lat: loc.lat, lng: loc.lng, country: loc.country || loc.name, geoTried: true } : {}),
+    };
     saveTrip(trip);
-    log("trip_started", { tripId: trip.id, city });
+    log("trip_started", { tripId: trip.id, city, detail: { pickedSuggestion: !!picked, pinned: !!loc } });
     go("#/add/" + trip.id);
   };
 }
@@ -603,7 +738,9 @@ function viewAdded(trip, place, tier, score, rank) {
   $("#done").onclick = () => finish(trip);
 }
 
+let justFinished = null; // trip id whose postcard should open with its new map pin
 function finish(trip) {
+  justFinished = trip.id;
   const seconds = Math.round((Date.now() - trip.created) / 1000);
   if (!trip.finishedAt) { trip.finishedAt = Date.now(); saveTrip(trip); }
   log("ranking_finished", { tripId: trip.id, city: trip.city, numPlaces: countPlaces(trip), seconds, detail: { comparisons: trip.compares || 0 } });
@@ -637,8 +774,16 @@ function viewTrip(id) {
   if (!trip) return go("#/");
   const n = countPlaces(trip);
   const url = shareUrl(trip);
+  const showMap = justFinished === trip.id;
+  justFinished = null;
   app.innerHTML = `
     ${header()}
+    ${showMap ? `
+      <div class="card">
+        <strong id="pinmsg">${typeof trip.lat === "number" ? `📍 ${esc(trip.city)} is pinned on your travel map` : `📍 Your travel map`}</strong>
+        <div class="small muted" id="mapstats">${mapStats(myTrips())}</div>
+        <div class="map" id="map"></div>
+      </div>` : ""}
     <div class="card">
       <div class="postcard-head">
         <div class="stampbig">✉</div>
@@ -657,6 +802,17 @@ function viewTrip(id) {
     <div class="center"><button class="btn-link small" id="deltrip" style="color:var(--muted)">Delete this postcard</button></div>
   `;
   $("#add").onclick = () => go("#/add/" + trip.id);
+  if (showMap) {
+    const trips = myTrips();
+    drawMap($("#map"), trips, trip.id);
+    log("map_viewed", { tripId: trip.id, city: trip.city, numPlaces: n, detail: { context: "finished", pins: trips.filter((t) => typeof t.lat === "number").length } });
+    if (typeof trip.lat !== "number") backfillCoords(trips).then((changed) => {
+      if (!changed || !$("#map")) return;
+      drawMap($("#map"), trips, trip.id);
+      $("#mapstats").textContent = mapStats(trips);
+      if (typeof trips.find((t) => t.id === trip.id).lat === "number") $("#pinmsg").textContent = `📍 ${trip.city} is pinned on your travel map`;
+    });
+  }
   $("#deltrip").onclick = () => {
     if (!confirm("Delete this postcard?")) return;
     log("trip_deleted", { tripId: trip.id, city: trip.city, numPlaces: n });
