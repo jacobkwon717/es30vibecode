@@ -17,15 +17,6 @@
 
 const HEADERS = ['timestamp', 'event', 'uid', 'ref', 'role', 'tripId', 'city', 'numPlaces', 'seconds', 'detail', 'account'];
 
-// The dashboard's password. Stored in this script's properties, never in the public repo.
-function adminKey() {
-  const props = PropertiesService.getScriptProperties();
-  let key = props.getProperty('ADMIN_KEY');
-  if (!key) { key = Utilities.getUuid().replace(/-/g, '').slice(0, 16); props.setProperty('ADMIN_KEY', key); }
-  return key;
-}
-function showAdminKey() { Logger.log('Your admin key: ' + adminKey()); }
-
 function setup() {
   const ss = SpreadsheetApp.getActive();
   const events = ss.getSheetByName('Events') || ss.insertSheet('Events');
@@ -63,6 +54,15 @@ function setup() {
   showAdminKey();
   return events;
 }
+
+// The dashboard's password. Stored in this script's properties, never in the public repo.
+function adminKey() {
+  const props = PropertiesService.getScriptProperties();
+  let key = props.getProperty('ADMIN_KEY');
+  if (!key) { key = Utilities.getUuid().replace(/-/g, '').slice(0, 16); props.setProperty('ADMIN_KEY', key); }
+  return key;
+}
+function showAdminKey() { Logger.log('Your admin key: ' + adminKey()); }
 
 function doPost(e) {
   if (!e || !e.postData) return setup(); // clicked Run on doPost in the editor: do setup instead
