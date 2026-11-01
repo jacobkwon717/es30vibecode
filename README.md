@@ -49,7 +49,12 @@ Each meaningful action sends one row to a Google Sheet:
 
 **Setup (about 5 min):**
 1. Create a Google Sheet, then go to **Extensions → Apps Script** and paste in [`google-sheets/Code.gs`](google-sheets/Code.gs).
-2. Run the `setup` function once. It creates an **Events** tab and a **Summary** tab that computes the success metrics live (% who ranked 5+ places, median time, % who shared, friend opens/saves).
+2. Run the `setup` function once. It creates three tabs:
+   - **Summary:** every headline number in sections (visitors & sign-up, ranking, sharing, postcard reach, what visitors did, map & media), with an **All time** and a **Last 7 days** column. It includes unique app visitors, unique postcard visitors, link visits, impressions, and the two success targets (in bold). Rows tagged `test` are excluded.
+   - **Accounts:** everyone who signed up (joined, name, email, recruit tag).
+   - **Events:** the raw log, one row per action. Hover a column header for what it means.
+
+   Re-running `setup` rebuilds Summary and Accounts without touching logged events.
 3. **Deploy → New deployment → Web app**, Execute as *Me*, Access *Anyone*. Copy the `/exec` URL.
 4. Paste it into `LOG_URL` in `config.js`.
 

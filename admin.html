@@ -318,10 +318,10 @@ function render() {
       ${kpi("Postcards", fmtN(T.postcards), `${fmtN(T.finished5)} with 5+ places`)}
       ${kpi("Shares", fmtN(T.shares), "links copied or sent")}
       ${kpi("Link visits", fmtN(T.visits), "postcard opened by someone else")}
-      ${kpi("Unique visitors", fmtN(T.visitors), "different people")}
+      ${kpi("Unique postcard visitors", fmtN(T.visitors), "different people who opened a link")}
       ${kpi("Impressions", fmtN(T.impressions), "times any postcard was shown")}
       ${kpi("Saves", fmtN(T.saves), `${fmtN(T.mapClicks)} Maps clicks`)}
-      ${kpi("App visits", fmtN(T.appOpens), `${fmtN(T.devices)} devices · ${fmtN(T.conversions)} came from a friend's link`)}
+      ${kpi("Unique app visitors", fmtN(T.devices), `${fmtN(T.appOpens)} visits · ${fmtN(T.conversions)} started from a friend's link`)}
     </div>
 
     <div class="grid2" style="margin-top:12px">
