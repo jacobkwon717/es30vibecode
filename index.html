@@ -4,7 +4,22 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Postcard</title>
-<meta name="description" content="Rank the places from your last trip and send friends a postcard of what was actually worth it.">
+<meta name="description" content="See which places were actually worth it on a friend's trip, or rank your own in 5 minutes.">
+<!-- Link preview for iMessage, WhatsApp, Instagram, Slack, etc. Crawlers need absolute URLs. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Postcard">
+<meta property="og:title" content="Postcard: travel recs from friends, ranked">
+<meta property="og:description" content="See which places were actually worth it on a friend's trip, or rank your own in 5 minutes.">
+<meta property="og:url" content="https://jacobkwon717.github.io/es30vibecode/">
+<meta property="og:image" content="https://jacobkwon717.github.io/es30vibecode/assets/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="A ranked list of places from a trip to Lisbon, each with a score out of 10">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Postcard: travel recs from friends, ranked">
+<meta name="twitter:description" content="See which places were actually worth it on a friend's trip, or rank your own in 5 minutes.">
+<meta name="twitter:image" content="https://jacobkwon717.github.io/es30vibecode/assets/og-image.png">
+<link rel="apple-touch-icon" href="assets/icon-180.png">
 <meta name="theme-color" content="#f6f1e7">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✉️</text></svg>">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
@@ -868,7 +883,7 @@ function viewTrip(id) {
   if (!n) return;
   const logShare = (method) => log("list_shared", { tripId: trip.id, city: trip.city, numPlaces: n, detail: { method } });
   $("#share").onclick = async () => {
-    const text = `My ${trip.city} recs, ranked:`;
+    const text = `${trip.owner}'s ${trip.city} recs, ranked from best to skip ✉️`;
     if (navigator.share) {
       try { await navigator.share({ title: `${trip.owner}'s ${trip.city} postcard`, text, url }); logShare("native_share"); }
       catch (e) { if (e.name !== "AbortError") copy(); }
