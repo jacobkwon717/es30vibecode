@@ -50,7 +50,7 @@ Each meaningful action sends one row to a Google Sheet:
 **Setup (about 5 min):**
 1. Create a Google Sheet, then go to **Extensions → Apps Script** and paste in [`google-sheets/Code.gs`](google-sheets/Code.gs).
 2. Run the `setup` function once. It creates three tabs:
-   - **Summary:** every headline number in sections (visitors & sign-up, ranking, sharing, postcard reach, what visitors did, map & media), with an **All time** and a **Last 7 days** column. It includes unique app visitors, unique postcard visitors, link visits, impressions, and the two success targets (in bold). Rows tagged `test` are excluded.
+   - **Summary:** every headline number in sections (visitors & sign-up, ranking, sharing, postcard reach, what visitors did, map & media), with an **All time** and a **Last 7 days** column. It includes unique app visitors, unique postcard visitors, link visits, impressions, and the two success targets (in bold). Only **real users** are counted (see below).
    - **Accounts:** everyone who signed up (joined, name, email, recruit tag).
    - **Events:** the raw log, one row per action. Hover a column header for what it means.
 
@@ -75,7 +75,7 @@ How the numbers are counted:
 - **Unique visitors:** distinct devices.
 - **Impression:** any time a postcard was shown, including link visits, owners previewing their own link, and example views.
 
-Rows tagged `?r=test` are hidden by default.
+The **Real users only** box (on by default) hides testing; untick it to include it.
 
 **Setup:** after pasting the latest `Code.gs`, run `setup` once. It adds the `account` column and prints your **admin key**; run `showAdminKey` to see it again. Then publish the update: **Deploy → Manage deployments → ✏️ → Version: New version → Deploy**. The key lives in the Apps Script's properties, not in this public repo. Without it, the dashboard can't read anything.
 
@@ -89,9 +89,18 @@ Preview with sample data: `admin.html?demo`.
 
 (Netlify Drop also works: drag the folder onto app.netlify.com/drop.)
 
+## Real users vs. testing
+
+Every row in the Events tab has a `real` column (TRUE/FALSE):
+
+- **Settings tab → "Real users start at"**: set this to when real links went out (e.g. your email campaign), then run `setup` in Apps Script. Everything before that time is testing.
+- **Devices used before that time** (your phone, friends who helped test) count as testing forever, even if they come back later.
+- **Testing later?** Open the app once with `?test=1` on the end of the link on that device (e.g. `…/es30vibecode/?test=1`). It shows a 🧪 *test device* label and its activity never counts. `?test=0` undoes it.
+- The `?r=` tag is only for attribution now (which link someone came from). `?r=test` no longer means testing.
+
 ## Running the test
 
-- Send each recruit a personal link with a tag, e.g. `https://…/es30vibecode/?r=alex`. The tag appears in the `ref` column, so you know who did what without collecting names.
+- Send each recruit or campaign a link with a tag, e.g. `https://…/es30vibecode/?r=email` or `?r=alex`. The tag appears in the `ref` column, so you know where people came from.
 - One message plus at most one reminder, per the plan.
 - Success thresholds (set before launch): **≥50%** of people who start rank **5+ places**, and **≥10%** share their postcard with a friend.
 

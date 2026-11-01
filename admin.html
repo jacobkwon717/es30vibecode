@@ -105,7 +105,14 @@ const DEMO = new URLSearchParams(location.search).has("demo");
 
 let RAW = [];      // every event row from the sheet
 let fetchedAt = null;
-const state = { range: ls("range") || "all", hideTest: ls("hideTest") !== "0", sort: {} };
+let LAUNCH = 0, TEST_UIDS = new Set(); // "Real users start at" from the sheet's Settings tab, and devices used before it
+const state = { range: ls("range") || "all", realOnly: ls("realOnly") !== "0", sort: {} };
+// The sheet marks each row real/test; rows logged before that column existed are worked out the same way here.
+function isReal(r) {
+  if (r.real === true || r.real === "TRUE") return true;
+  if (r.real === false || r.real === "FALSE") return false;
+  return r.ts >= LAUNCH && !(r.tester === true || r.tester === "TRUE") && !TEST_UIDS.has(r.uid);
+}
 
 /* ---------- Loading ---------- */
 async function load(key) {
@@ -117,6 +124,8 @@ async function load(key) {
   try { data = JSON.parse(text); }
   catch (e) { throw new Error("The logger didn't return data. Publish the updated Code.gs as a New version (see README)."); }
   if (data.error) throw new Error(data.error);
+  LAUNCH = Number(data.launchAt) || 0;
+  TEST_UIDS = new Set(data.testUids || []);
   RAW = data.rows.map((r) => {
     let detail = {};
     try { detail = r.detail ? JSON.parse(r.detail) : {}; } catch (e) {}
@@ -149,7 +158,7 @@ async function start(key) {
 function compute() {
   const now = Date.now();
   const since = state.range === "7" ? now - 7 * 864e5 : state.range === "30" ? now - 30 * 864e5 : 0;
-  const rows = RAW.filter((r) => r.ts >= since && !(state.hideTest && String(r.ref).toLowerCase() === "test"));
+  const rows = RAW.filter((r) => r.ts >= since && (!state.realOnly || isReal(r)));
 
   const accounts = new Map();   // account id -> profile + stats
   const trips = new Map();      // trip id -> postcard + stats
@@ -170,8 +179,9 @@ function compute() {
       a.name = r.detail.name || a.name; a.email = r.detail.email || a.email;
       a.joined = r.event === "account_created" ? r.ts : a.joined || (r.detail.created ? new Date(r.detail.created).getTime() : r.ts);
       a.ref = a.ref || r.ref;
+      a.real = isReal(r);
     }
-    if (r.event === "trip_started" && r.tripId) { const t = trip(r.tripId); t.city = r.city; t.account = r.account; t.created = r.ts; t.ref = r.ref; }
+    if (r.event === "trip_started" && r.tripId) { const t = trip(r.tripId); t.city = r.city; t.account = r.account; t.created = r.ts; t.ref = r.ref; t.real = isReal(r); }
   }
   for (const r of rows) {
     if (r.event === "account_created" && !r.account) legacy++;
@@ -190,7 +200,7 @@ function compute() {
     if (r.event === "friend_map_click") t.mapClicks++;
   }
   const inRange = (t) => t.created ? t.created >= since : true;
-  const tripList = [...trips.values()].filter((t) => t.city && (inRange(t) || t.impressions || t.shares));
+  const tripList = [...trips.values()].filter((t) => t.city && (!state.realOnly || t.real) && (inRange(t) || t.impressions || t.shares));
   for (const t of tripList) {
     if (!t.account || !accounts.has(t.account)) continue;
     const a = accounts.get(t.account);
@@ -198,7 +208,7 @@ function compute() {
     a.shares += t.shares; a.visits += t.visits; a.impressions += t.impressions; a.saves += t.saves;
     t.visitors.forEach((v) => a.visitors.add(v));
   }
-  const accountList = [...accounts.values()].filter((a) => (a.joined && a.joined >= since) || a.lastActive);
+  const accountList = [...accounts.values()].filter((a) => (!state.realOnly || a.real || a.lastActive) && ((a.joined && a.joined >= since) || a.lastActive));
   const ev = (name, filter = () => true) => rows.filter((r) => r.event === name && filter(r)).length;
 
   const totals = {
@@ -300,14 +310,14 @@ function render() {
   });
   root.innerHTML = `
     <header>
-      <div><h1>Postcard analytics</h1><p class="sub" style="margin:0">${DEMO ? "Sample data, not your real users. " : ""}Updated ${fmtDateTime(fetchedAt)} · ${fmtN(RAW.length)} events logged</p></div>
+      <div><h1>Postcard analytics</h1><p class="sub" style="margin:0">${DEMO ? "Sample data, not your real users. " : ""}Updated ${fmtDateTime(fetchedAt)} · ${fmtN(RAW.length)} events logged${state.realOnly && LAUNCH ? ` · <b>real users since ${fmtDateTime(LAUNCH)}</b>` : ""}</p></div>
       <div class="filters">
         <label>Range <select id="range">
           <option value="all"${state.range === "all" ? " selected" : ""}>All time</option>
           <option value="30"${state.range === "30" ? " selected" : ""}>Last 30 days</option>
           <option value="7"${state.range === "7" ? " selected" : ""}>Last 7 days</option>
         </select></label>
-        <label><input type="checkbox" id="hideTest"${state.hideTest ? " checked" : ""}> Hide <span class="tag">test</span> rows</label>
+        <label title="Hides activity before 'Real users start at' (Settings tab), devices used before then, and devices marked with ?test=1"><input type="checkbox" id="realOnly"${state.realOnly ? " checked" : ""}> Real users only</label>
         <button id="refresh">↻ Refresh</button>
         ${DEMO ? `<a href="admin.html">Exit demo</a>` : `<button id="logout">Lock</button>`}
       </div>
@@ -380,6 +390,7 @@ function render() {
           <li><b>Unique visitors</b>: how many different devices opened shared links.</li>
           <li><b>Impressions</b>: every time a postcard was displayed: link visits, plus owners previewing their own link, plus views of the example postcard.</li>
           <li><b>Shares</b>: share-sheet sends and "Copy" taps. We can't see whether the message was actually sent.</li>
+          <li><b>Real users only</b>: everything from the "Real users start at" time in your sheet's Settings tab, excluding devices used before then and devices marked with <code>?test=1</code>. Untick it to include your testing.</li>
           <li>Each device is one person. Someone using two devices counts twice.</li>
         </ul>
       </div>
@@ -394,7 +405,7 @@ function render() {
   `;
 
   $("#range").onchange = (e) => { state.range = e.target.value; ls("range", state.range); render(); };
-  $("#hideTest").onchange = (e) => { state.hideTest = e.target.checked; ls("hideTest", state.hideTest ? "1" : "0"); render(); };
+  $("#realOnly").onchange = (e) => { state.realOnly = e.target.checked; ls("realOnly", state.realOnly ? "1" : "0"); render(); };
   $("#refresh").onclick = () => start(ls("key"));
   if ($("#logout")) $("#logout").onclick = () => { ls("key", null); viewLogin(); };
   root.querySelectorAll("[data-table] th").forEach((th) => (th.onclick = () => {

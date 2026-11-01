@@ -9,18 +9,24 @@
  *  3. Deploy → New deployment → type "Web app".
  *     Execute as: Me. Who has access: Anyone. Click Deploy and copy the /exec URL.
  *  4. Paste that URL into LOG_URL in config.js.
- *  5. The Execution log from `setup` prints your ADMIN KEY. Enter it on admin.html to
+ *  5. In the "Settings" tab, set "Real users start at" to when you started sending real
+ *     links (e.g. your email campaign), then run `setup` again. Everything before that,
+ *     and every device used before that, counts as testing.
+ *  6. The Execution log from `setup` prints your ADMIN KEY. Enter it on admin.html to
  *     see the analytics dashboard. Run `showAdminKey` any time to see it again.
  *
  * After editing this file, publish the change: Deploy → Manage deployments → ✏️ →
  * Version: "New version" → Deploy. The /exec URL stays the same.
  */
 
-const HEADERS = ['timestamp', 'event', 'uid', 'ref', 'role', 'tripId', 'city', 'numPlaces', 'seconds', 'detail', 'account'];
+const HEADERS = ['timestamp', 'event', 'uid', 'ref', 'role', 'tripId', 'city', 'numPlaces', 'seconds', 'detail', 'account', 'tester', 'real'];
+const COL = {}; HEADERS.forEach(function (h, i) { COL[h] = i + 1; });
 
 function setup() {
   const ss = SpreadsheetApp.getActive();
   const events = setupEvents(ss);
+  setupSettings(ss);
+  applyLaunch(ss);
   buildSummary(ss);
   buildAccounts(ss);
   Logger.log('Set up "Events", "Summary" and "Accounts" tabs in: ' + ss.getName() + '  ' + ss.getUrl());
@@ -33,7 +39,7 @@ const HEADER_NOTES = {
   timestamp: 'When it happened (spreadsheet time zone)',
   event: 'What happened, e.g. trip_started, list_shared, friend_opened',
   uid: 'Anonymous device id: one per phone/browser',
-  ref: 'Recruit tag from ?r= in the invite link. "test" rows are excluded from Summary.',
+  ref: 'Recruit/campaign tag from ?r= in the link (for attribution only)',
   role: 'owner = the traveler, friend = someone opening a shared link, owner_preview = owner opening their own link',
   tripId: 'Which postcard',
   city: 'Postcard city',
@@ -41,6 +47,8 @@ const HEADER_NOTES = {
   seconds: 'ranking_finished only: seconds from starting the postcard',
   detail: 'Extra info as JSON (tier, place, name/email on sign-up, ...)',
   account: 'Account id of whoever was signed in',
+  tester: 'TRUE if this device was marked as a test device (opened the app with ?test=1)',
+  real: 'TRUE = a real user. FALSE = testing: before "Real users start at" (Settings tab), a device used before then, or a marked test device',
 };
 function setupEvents(ss) {
   const events = ss.getSheetByName('Events') || ss.insertSheet('Events', 0);
@@ -64,14 +72,55 @@ function setupEvents(ss) {
   return events;
 }
 
+/* ---------- Settings + who counts as a real user ---------- */
+function setupSettings(ss) {
+  let sh = ss.getSheetByName('Settings');
+  if (!sh) {
+    sh = ss.insertSheet('Settings');
+    sh.getRange('B1').setValue(new Date()); // first run: real users start now
+  }
+  sh.getRange('A1').setValue('Real users start at').setFontWeight('bold');
+  sh.getRange('B1').setNumberFormat('yyyy-mm-dd hh:mm').setBackground('#fff4cc');
+  sh.getRange('A3').setValue('Set this to when real links went out (e.g. your email campaign), then run setup again in Apps Script.');
+  sh.getRange('A4').setValue('Everything before this time counts as testing, and so does every device used before it (your own phone, friends who helped test).');
+  sh.getRange('A5').setValue('To test later without polluting the numbers, open the app once with ?test=1 at the end of the link on that device (?test=0 undoes it).');
+  sh.getRange('A3:A5').setFontColor('#6b7680');
+  sh.setColumnWidth(1, 200); sh.setColumnWidth(2, 160);
+}
+
+function launchTime(ss) {
+  const v = ss.getSheetByName('Settings').getRange('B1').getValue();
+  const d = v instanceof Date ? v : new Date(v);
+  return isNaN(d.getTime()) ? new Date() : d;
+}
+const toTime = function (v) { return (v instanceof Date ? v : new Date(v)).getTime(); };
+const isReal = function (ts, uid, tester, launch, testUids) { return ts >= launch && tester !== true && tester !== 'TRUE' && !testUids[uid]; };
+
+// Marks every logged row real/test from the Settings time, and remembers the test devices for new rows.
+function applyLaunch(ss) {
+  const launch = launchTime(ss).getTime();
+  const events = ss.getSheetByName('Events');
+  const last = events.getLastRow();
+  const testUids = {};
+  if (last > 1) {
+    const rows = events.getRange(2, 1, last - 1, HEADERS.length).getValues();
+    rows.forEach(function (r) { if (toTime(r[COL.timestamp - 1]) < launch) testUids[r[COL.uid - 1]] = true; });
+    events.getRange(2, COL.real, last - 1, 1).setValues(rows.map(function (r) {
+      return [isReal(toTime(r[COL.timestamp - 1]), r[COL.uid - 1], r[COL.tester - 1], launch, testUids)];
+    }));
+  }
+  PropertiesService.getScriptProperties().setProperties({ LAUNCH_AT: String(launch), TEST_UIDS: JSON.stringify(Object.keys(testUids)) });
+  Logger.log('Real users counted from ' + new Date(launch) + '. Test devices from before then: ' + Object.keys(testUids).length);
+}
+
 /* ---------- Summary: every headline number, all time and last 7 days ---------- */
 function buildSummary(ss) {
   const sum = ss.getSheetByName('Summary') || ss.insertSheet('Summary', 0);
   sum.clear();
   const C = { ts: 'Events!A2:A', event: 'Events!B2:B', uid: 'Events!C2:C', ref: 'Events!D2:D', role: 'Events!E2:E', trip: 'Events!F2:F', places: 'Events!H2:H', secs: 'Events!I2:I', detail: 'Events!J2:J' };
-  // FILTER conditions shared by every metric: the event name, no "test" rows, and optionally the last 7 days.
+  // FILTER conditions shared by every metric: the event name, real users only, and optionally the last 7 days.
   function conds(event, extra, week) {
-    return [C.event + '="' + event + '"', C.ref + '<>"test"'].concat(extra || []).concat(week ? [C.ts + '>=NOW()-7'] : []).join(', ');
+    return [C.event + '="' + event + '"', 'Events!M2:M=TRUE'].concat(extra || []).concat(week ? [C.ts + '>=NOW()-7'] : []).join(', ');
   }
   const people = function (event, extra) { return function (w) { return 'IFERROR(COUNTUNIQUE(FILTER(' + C.uid + ', ' + conds(event, extra, w) + ')),0)'; }; };
   const times = function (event, extra) { return function (w) { return 'IFERROR(ROWS(FILTER(' + C.event + ', ' + conds(event, extra, w) + ')),0)'; }; };
@@ -136,7 +185,7 @@ function buildSummary(ss) {
     return '=' + f.plus.map(function (id) { return cell(id, col); }).join('+');
   };
 
-  sum.getRange(1, 1).setValue('Postcard summary: updates automatically. Rows tagged "test" are excluded.').setFontWeight('bold').setFontSize(12);
+  sum.getRange(1, 1).setFormula('="Real users only, since "&TEXT(Settings!B1,"mmm d, yyyy h:mm am/pm")&". Testing is excluded (change the start time in the Settings tab)."').setFontWeight('bold').setFontSize(12);
   sum.getRange(2, 1, 1, 4).setValues([['Metric', 'All time', 'Last 7 days', 'Notes']]).setFontWeight('bold').setBackground('#efe7d6');
   spec.forEach(function (r, i) {
     const row = TOP + i;
@@ -159,13 +208,14 @@ function buildAccounts(ss) {
   sh.clear();
   const isAcct = '(Events!B2:B="account_created")+(Events!B2:B="account_synced")';
   const field = function (name) { return '=IFERROR(ARRAYFORMULA(IFERROR(REGEXEXTRACT(FILTER(Events!J2:J, ' + isAcct + '), """' + name + '"":""([^""]*)"""), "")), "")'; };
-  sh.getRange(1, 1, 1, 5).setValues([['Joined', 'Name', 'Email', 'Recruit tag', 'Device']]).setFontWeight('bold').setBackground('#efe7d6');
-  sh.getRange(2, 1, 1, 5).setFormulas([[
+  sh.getRange(1, 1, 1, 6).setValues([['Joined', 'Name', 'Email', 'Recruit tag', 'Device', 'Real user?']]).setFontWeight('bold').setBackground('#efe7d6');
+  sh.getRange(2, 1, 1, 6).setFormulas([[
     '=IFERROR(FILTER(Events!A2:A, ' + isAcct + '), "No accounts yet")',
     field('name'),
     field('email'),
     '=IFERROR(FILTER(Events!D2:D, ' + isAcct + '), "")',
     '=IFERROR(FILTER(Events!C2:C, ' + isAcct + '), "")',
+    '=IFERROR(ARRAYFORMULA(IF(FILTER(Events!M2:M, ' + isAcct + ')=TRUE, "Real", "Test")), "")',
   ]]);
   sh.getRange('A:A').setNumberFormat('yyyy-mm-dd hh:mm');
   sh.setFrozenRows(1);
@@ -188,6 +238,11 @@ function doPost(e) {
   try {
     const d = JSON.parse(e.postData.contents);
     const sheet = SpreadsheetApp.getActive().getSheetByName('Events') || setup();
+    const props = PropertiesService.getScriptProperties();
+    const launch = Number(props.getProperty('LAUNCH_AT') || 0);
+    const testUids = {}; JSON.parse(props.getProperty('TEST_UIDS') || '[]').forEach(function (u) { testUids[u] = true; });
+    d.tester = d.tester === true;
+    d.real = isReal(toTime(d.ts), d.uid, d.tester, launch, testUids);
     sheet.appendRow(HEADERS.map(function (h) { return h === 'timestamp' ? new Date(d.ts) : (d[h] === undefined ? '' : d[h]); }));
     return ContentService.createTextOutput('ok');
   } finally {
@@ -208,7 +263,8 @@ function doGet(e) {
     head.forEach(function (h, i) { o[h] = r[i] instanceof Date ? r[i].toISOString() : r[i]; });
     return o;
   });
-  return json({ rows: rows, generated: new Date().toISOString() });
+  const props = PropertiesService.getScriptProperties();
+  return json({ rows: rows, generated: new Date().toISOString(), launchAt: Number(props.getProperty('LAUNCH_AT') || 0), testUids: JSON.parse(props.getProperty('TEST_UIDS') || '[]') });
 }
 
 function json(obj) {

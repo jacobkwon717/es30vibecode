@@ -211,15 +211,21 @@ function toast(msg) {
 /* ---------- Anonymous identity + recruit tag ---------- */
 // ?r=alex in an invite link tags that participant so you can tell recruits apart in the sheet.
 const uid = store("uid") || (() => { const u = rid() + rid(); store("uid", u); return u; })();
-const urlRef = new URLSearchParams(location.search).get("r");
+const params = new URLSearchParams(location.search);
+const urlRef = params.get("r");
 if (urlRef) store("ref", urlRef);
 const ref = store("ref") || "";
+// ?test=1 marks this device as yours for testing, so its activity never counts as a real user (?test=0 undoes it).
+if (params.get("test") === "1") store("tester", true);
+if (params.get("test") === "0") store("tester", null);
+const tester = !!store("tester");
 
 /* ---------- Event logging → Google Sheets ---------- */
 function log(event, data = {}) {
   const row = {
     ts: new Date().toISOString(), event, uid, ref,
     account: (currentUser() || {}).id || "",
+    tester,
     role: data.role || "owner",
     tripId: data.tripId || "", city: data.city || "",
     numPlaces: data.numPlaces ?? "", seconds: data.seconds ?? "",
@@ -539,7 +545,7 @@ function render() {
 
 const header = (right = "") => `
   <header class="top">
-    <a class="brand" href="#/"><span class="stamp">✉</span> Postcard</a>
+    <a class="brand" href="#/"><span class="stamp">✉</span> Postcard${tester ? ` <span class="chip" style="font-size:.7rem;padding:2px 8px;font-weight:600">🧪 test device</span>` : ""}</a>
     <span>${right}</span>
   </header>`;
 
