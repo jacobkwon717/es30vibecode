@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Postcard Analytics</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f6f1e7; --surface: #fffdf8; --ink: #1f2a33; --ink-2: #52514e; --muted: #7a8288;
+    --line: #e4dccb; --grid: #ece6d9; --accent: #d2553b; --chip: #efe7d6;
+    --series-1: #2a78d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #161a1e; --surface: #1f2429; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #959ca3;
+      --line: #313a42; --grid: #2a3138; --accent: #e86a4f; --chip: #2a3238;
+      --series-1: #3987e5;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #161a1e; --surface: #1f2429; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #959ca3;
+    --line: #313a42; --grid: #2a3138; --accent: #e86a4f; --chip: #2a3238;
+    --series-1: #3987e5;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px 16px 64px; }
+  h1 { font-size: 1.5rem; margin: 0; }
+  h2 { font-size: 1.05rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: .85rem; margin: 0 0 12px; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin: 12px 0; }
+  button, select, input { font: inherit; color: var(--ink); }
+  button { cursor: pointer; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); padding: 8px 12px; }
+  .primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  select, input[type=password], input[type=text] { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 8px 10px; }
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .filters label { font-size: .85rem; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+  .muted { color: var(--muted); }
+  .err { color: var(--accent); }
+
+  /* KPI row */
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .kpi .v { font-size: 1.9rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .kpi .l { font-size: .85rem; color: var(--ink-2); font-weight: 600; }
+  .kpi .d { font-size: .75rem; color: var(--muted); margin-top: 2px; }
+
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+  .grid2 > .card { margin: 0; }
+
+  /* Funnel (horizontal bars, single series) */
+  .funnel { display: grid; gap: 8px; }
+  .frow { display: grid; grid-template-columns: minmax(120px, 34%) 1fr auto; gap: 10px; align-items: center; font-size: .85rem; }
+  .ftrack { height: 18px; position: relative; }
+  .fbar { height: 100%; background: var(--series-1); border-radius: 0 4px 4px 0; min-width: 2px; }
+  .fval { font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+  .fval .muted { font-size: .8rem; }
+
+  /* Daily column chart (single series) */
+  .chart { position: relative; height: 150px; display: flex; align-items: flex-end; gap: 2px; border-bottom: 1px solid var(--line); margin-top: 8px; }
+  .chart .gridline { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--grid); pointer-events: none; }
+  .chart .gl-label { position: absolute; right: 0; transform: translateY(-110%); font-size: .7rem; color: var(--muted); }
+  .col { flex: 1; height: 100%; display: flex; align-items: flex-end; background: none; border: none; padding: 0; border-radius: 0; position: relative; }
+  .col:hover, .col:focus-visible { background: var(--chip); outline: none; }
+  .col i { display: block; width: 100%; background: var(--series-1); border-radius: 4px 4px 0 0; }
+  .xlabels { display: flex; justify-content: space-between; font-size: .7rem; color: var(--muted); margin-top: 4px; }
+  .tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--bg); padding: 6px 10px; border-radius: 8px; font-size: .8rem; z-index: 10; display: none; white-space: nowrap; }
+
+  /* Tables */
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .85rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--ink-2); font-weight: 600; cursor: pointer; user-select: none; position: sticky; top: 0; background: var(--surface); }
+  th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody tr:hover { background: var(--chip); }
+  details summary { cursor: pointer; font-size: .8rem; color: var(--muted); margin-top: 8px; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 99px; background: var(--chip); font-size: .75rem; }
+  .defs { font-size: .8rem; color: var(--ink-2); margin: 0; padding-left: 18px; }
+  .defs li { margin: 2px 0; }
+  .login { max-width: 420px; margin: 10vh auto; }
+  .login input { width: 100%; margin: 8px 0; }
+</style>
+</head>
+<body>
+<main id="root"></main>
+<div class="tip" id="tip"></div>
+<script src="config.js"></script>
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const root = $("#root");
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem("pcadmin_" + k); if (v === null) localStorage.removeItem("pcadmin_" + k); else localStorage.setItem("pcadmin_" + k, v); } catch (e) { return null; } };
+const fmtN = (n) => Number(n || 0).toLocaleString();
+const pct = (a, b) => (b ? Math.round((a / b) * 100) + "%" : "–");
+const day = (ts) => new Date(ts).toISOString().slice(0, 10);
+const fmtDate = (ts) => ts ? new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "–";
+const fmtDateTime = (ts) => ts ? new Date(ts).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "–";
+const DEMO = new URLSearchParams(location.search).has("demo");
+
+let RAW = [];      // every event row from the sheet
+let fetchedAt = null;
+const state = { range: ls("range") || "all", hideTest: ls("hideTest") !== "0", sort: {} };
+
+/* ---------- Loading ---------- */
+async function load(key) {
+  if (DEMO) { RAW = demoRows(); fetchedAt = new Date(); return; }
+  if (!window.CONFIG || !CONFIG.LOG_URL) throw new Error("LOG_URL is empty in config.js.");
+  const res = await fetch(CONFIG.LOG_URL + "?key=" + encodeURIComponent(key));
+  const text = await res.text();
+  let data;
+  try { data = JSON.parse(text); }
+  catch (e) { throw new Error("The logger didn't return data. Publish the updated Code.gs as a New version (see README)."); }
+  if (data.error) throw new Error(data.error);
+  RAW = data.rows.map((r) => {
+    let detail = {};
+    try { detail = r.detail ? JSON.parse(r.detail) : {}; } catch (e) {}
+    return { ...r, ts: new Date(r.timestamp).getTime(), detail };
+  }).filter((r) => !isNaN(r.ts));
+  fetchedAt = new Date(data.generated);
+}
+
+function viewLogin(msg = "") {
+  root.innerHTML = `
+    <div class="card login">
+      <h1>Postcard analytics</h1>
+      <p class="sub">Enter the admin key from your Google Apps Script (run <code>showAdminKey</code> to see it).</p>
+      <form id="f"><input type="password" id="key" placeholder="Admin key" autocomplete="current-password"><button class="primary" style="width:100%">Open dashboard</button></form>
+      <p class="err" id="err">${esc(msg)}</p>
+      <p class="sub">Just want to see what it looks like? <a href="?demo">Open with sample data</a>.</p>
+    </div>`;
+  $("#key").focus();
+  $("#f").onsubmit = (e) => { e.preventDefault(); start($("#key").value.trim()); };
+}
+
+async function start(key) {
+  if (!DEMO && !key) return viewLogin();
+  root.innerHTML = `<p class="muted" style="padding:24px">Loading analytics…</p>`;
+  try { await load(key); if (!DEMO) ls("key", key); render(); }
+  catch (e) { ls("key", null); viewLogin(e.message); }
+}
+
+/* ---------- Aggregation ---------- */
+function compute() {
+  const now = Date.now();
+  const since = state.range === "7" ? now - 7 * 864e5 : state.range === "30" ? now - 30 * 864e5 : 0;
+  const rows = RAW.filter((r) => r.ts >= since && !(state.hideTest && String(r.ref).toLowerCase() === "test"));
+
+  const accounts = new Map();   // account id -> profile + stats
+  const trips = new Map();      // trip id -> postcard + stats
+  const uniq = (ev, filter = () => true) => new Set(rows.filter((r) => r.event === ev && filter(r)).map((r) => r.uid)).size;
+  const acct = (id) => {
+    if (!accounts.has(id)) accounts.set(id, { id, name: "", email: "", joined: null, ref: "", lastActive: 0, postcards: 0, places: 0, shares: 0, visits: 0, visitors: new Set(), impressions: 0, saves: 0 });
+    return accounts.get(id);
+  };
+  const trip = (id) => {
+    if (!trips.has(id)) trips.set(id, { id, city: "", account: "", created: null, places: 0, finished: false, shares: 0, visits: 0, visitors: new Set(), impressions: 0, saves: 0, mapClicks: 0 });
+    return trips.get(id);
+  };
+
+  let legacy = 0; // accounts created before events carried an account id
+  for (const r of RAW) { // profiles come from all time so names show even when the range is narrowed
+    if ((r.event === "account_created" || r.event === "account_synced") && r.account) {
+      const a = acct(r.account);
+      a.name = r.detail.name || a.name; a.email = r.detail.email || a.email;
+      a.joined = r.event === "account_created" ? r.ts : a.joined || (r.detail.created ? new Date(r.detail.created).getTime() : r.ts);
+      a.ref = a.ref || r.ref;
+    }
+    if (r.event === "trip_started" && r.tripId) { const t = trip(r.tripId); t.city = r.city; t.account = r.account; t.created = r.ts; t.ref = r.ref; }
+  }
+  for (const r of rows) {
+    if (r.event === "account_created" && !r.account) legacy++;
+    if (r.account) { const a = acct(r.account); a.lastActive = Math.max(a.lastActive, r.ts); if (!a.ref) a.ref = r.ref; }
+    if (!r.tripId || r.tripId === "example") continue;
+    const t = trip(r.tripId);
+    if (!t.city) t.city = r.city;
+    if (["place_added", "place_removed", "ranking_finished"].includes(r.event) && r.role !== "friend" && r.numPlaces !== "") t.places = Number(r.numPlaces);
+    if (r.event === "ranking_finished") t.finished = true;
+    if (r.event === "list_shared") t.shares++;
+    if (r.event === "friend_opened") {
+      t.impressions++;
+      if (r.role === "friend") { t.visits++; t.visitors.add(r.uid); }
+    }
+    if (r.event === "friend_saved") t.saves++;
+    if (r.event === "friend_map_click") t.mapClicks++;
+  }
+  const inRange = (t) => t.created ? t.created >= since : true;
+  const tripList = [...trips.values()].filter((t) => t.city && (inRange(t) || t.impressions || t.shares));
+  for (const t of tripList) {
+    if (!t.account || !accounts.has(t.account)) continue;
+    const a = accounts.get(t.account);
+    if (inRange(t)) { a.postcards++; a.places += t.places; }
+    a.shares += t.shares; a.visits += t.visits; a.impressions += t.impressions; a.saves += t.saves;
+    t.visitors.forEach((v) => a.visitors.add(v));
+  }
+  const accountList = [...accounts.values()].filter((a) => (a.joined && a.joined >= since) || a.lastActive);
+  const ev = (name, filter = () => true) => rows.filter((r) => r.event === name && filter(r)).length;
+
+  const totals = {
+    accounts: accountList.filter((a) => a.joined && a.joined >= since).length + legacy,
+    postcards: tripList.filter(inRange).length,
+    finished5: tripList.filter((t) => inRange(t) && t.finished && t.places >= 5).length,
+    shares: ev("list_shared"),
+    visits: ev("friend_opened", (r) => r.role === "friend"),
+    visitors: uniq("friend_opened", (r) => r.role === "friend"),
+    impressions: ev("friend_opened") + ev("example_viewed"),
+    saves: ev("friend_saved"),
+    mapClicks: ev("friend_map_click"),
+    appOpens: ev("app_open"), devices: uniq("app_open"),
+    conversions: uniq("friend_started_own"),
+  };
+  const funnel = [
+    ["Opened the app", uniq("app_open")],
+    ["Saw sign-up", uniq("signup_viewed")],
+    ["Created account", uniq("account_created")],
+    ["Started a postcard", uniq("trip_started")],
+    ["Ranked 5+ places", uniq("ranking_finished", (r) => Number(r.numPlaces) >= 5)],
+    ["Shared a postcard", uniq("list_shared")],
+  ];
+  // Daily series across the selected window (capped at the last 60 days for readability)
+  const first = rows.length ? Math.min(...rows.map((r) => r.ts)) : now;
+  const start = Math.max(first, since || first, now - 59 * 864e5);
+  const days = [];
+  for (let d = new Date(day(start)).getTime(); d <= now; d += 864e5) days.push(day(d));
+  const perDay = (filter) => { const m = Object.fromEntries(days.map((d) => [d, 0])); rows.filter(filter).forEach((r) => { const k = day(r.ts); if (k in m) m[k]++; }); return days.map((d) => [d, m[d]]); };
+  const daily = {
+    visits: perDay((r) => r.event === "friend_opened" && r.role === "friend"),
+    accounts: perDay((r) => r.event === "account_created"),
+  };
+  const recent = rows.slice().sort((a, b) => b.ts - a.ts).slice(0, 40);
+  const refs = [...new Set(RAW.map((r) => r.ref).filter(Boolean))];
+  return { totals, funnel, accountList, tripList, daily, recent, accounts, refs };
+}
+
+/* ---------- Rendering ---------- */
+const kpi = (label, value, note = "") => `<div class="kpi"><div class="l">${label}</div><div class="v">${value}</div><div class="d">${note}</div></div>`;
+
+function funnelHtml(steps) {
+  const max = Math.max(1, steps[0][1], ...steps.map((s) => s[1]));
+  return `<div class="funnel" role="list">${steps.map(([label, n], i) => `
+    <div class="frow" role="listitem">
+      <span>${label}</span>
+      <div class="ftrack"><div class="fbar" style="width:${(n / max) * 100}%"></div></div>
+      <span class="fval">${fmtN(n)} ${i ? `<span class="muted">${pct(n, steps[0][1])}</span>` : ""}</span>
+    </div>`).join("")}</div>`;
+}
+
+function columnChart(id, series, unit) {
+  const max = Math.max(1, ...series.map((s) => s[1]));
+  const nice = max <= 5 ? max : Math.ceil(max / 5) * 5;
+  return `
+    <div class="chart" id="${id}">
+      <div class="gridline" style="bottom:100%"><span class="gl-label">${nice}</span></div>
+      <div class="gridline" style="bottom:50%"><span class="gl-label">${nice % 2 ? "" : nice / 2}</span></div>
+      ${series.map(([d, n]) => `<button class="col" data-tip="${fmtDate(d + "T12:00:00")}: ${n} ${unit}${n === 1 ? "" : "s"}" aria-label="${d}: ${n}"><i style="height:${n ? Math.max(2, (n / nice) * 100) : 0}%"></i></button>`).join("")}
+    </div>
+    <div class="xlabels"><span>${series.length ? fmtDate(series[0][0] + "T12:00:00") : ""}</span><span>${series.length ? fmtDate(series[series.length - 1][0] + "T12:00:00") : ""}</span></div>
+    <details><summary>Show as table</summary><div class="tablewrap"><table><thead><tr><th>Day</th><th class="num">${unit}s</th></tr></thead><tbody>
+      ${series.filter((s) => s[1]).map(([d, n]) => `<tr><td>${d}</td><td class="num">${n}</td></tr>`).join("") || `<tr><td colspan="2" class="muted">None yet</td></tr>`}
+    </tbody></table></div></details>`;
+}
+
+// Sortable table: cols = [{key, label, num, fmt}]
+function table(id, cols, rows, empty) {
+  const s = state.sort[id] || {};
+  const sorted = s.key ? rows.slice().sort((a, b) => {
+    const x = a[s.key], y = b[s.key];
+    return (typeof x === "number" && typeof y === "number" ? x - y : String(x ?? "").localeCompare(String(y ?? ""))) * (s.dir || 1);
+  }) : rows;
+  return `<div class="tablewrap"><table data-table="${id}"><thead><tr>${cols.map((c) => `<th class="${c.num ? "num" : ""}" data-sort="${c.key}">${c.label}${s.key === c.key ? (s.dir > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead>
+    <tbody>${sorted.length ? sorted.map((r) => `<tr>${cols.map((c) => `<td class="${c.num ? "num" : ""}">${c.fmt ? c.fmt(r[c.key], r) : esc(r[c.key])}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${cols.length}" class="muted">${empty}</td></tr>`}</tbody></table></div>`;
+}
+
+const EVENT_LABELS = {
+  app_open: "opened the app", signup_viewed: "saw sign-up", account_created: "created an account", account_synced: "account synced",
+  logged_in: "logged in", logged_out: "logged out", trip_started: "started a postcard", place_added: "ranked a place",
+  place_removed: "removed a place", ranking_finished: "finished ranking", list_shared: "shared a postcard",
+  friend_opened: "opened a postcard link", friend_saved: "saved a place", friend_unsaved: "unsaved a place",
+  friend_map_click: "opened a place in Maps", friend_started_own: "started their own postcard (from a friend's link)",
+  example_viewed: "viewed the example", media_added: "added photos/video", map_viewed: "saw their travel map", trip_deleted: "deleted a postcard",
+};
+
+function render() {
+  const d = compute();
+  const T = d.totals;
+  const who = (r) => {
+    const a = r.account && d.accounts.get(r.account);
+    if (a && a.name) return esc(a.name);
+    return r.role === "friend" ? "A visitor" : `<span class="muted">device ${esc(String(r.uid).slice(0, 6))}</span>`;
+  };
+  const accountRows = d.accountList.map((a) => ({ ...a, visitorsN: a.visitors.size, name: a.name || "(created before tracking)" }));
+  const tripRows = d.tripList.map((t) => {
+    const a = d.accounts.get(t.account);
+    return { ...t, owner: a && a.name ? a.name : "–", visitorsN: t.visitors.size };
+  });
+  root.innerHTML = `
+    <header>
+      <div><h1>Postcard analytics</h1><p class="sub" style="margin:0">${DEMO ? "Sample data, not your real users. " : ""}Updated ${fmtDateTime(fetchedAt)} · ${fmtN(RAW.length)} events logged</p></div>
+      <div class="filters">
+        <label>Range <select id="range">
+          <option value="all"${state.range === "all" ? " selected" : ""}>All time</option>
+          <option value="30"${state.range === "30" ? " selected" : ""}>Last 30 days</option>
+          <option value="7"${state.range === "7" ? " selected" : ""}>Last 7 days</option>
+        </select></label>
+        <label><input type="checkbox" id="hideTest"${state.hideTest ? " checked" : ""}> Hide <span class="tag">test</span> rows</label>
+        <button id="refresh">↻ Refresh</button>
+        ${DEMO ? `<a href="admin.html">Exit demo</a>` : `<button id="logout">Lock</button>`}
+      </div>
+    </header>
+
+    <div class="kpis">
+      ${kpi("Accounts", fmtN(T.accounts), "created")}
+      ${kpi("Postcards", fmtN(T.postcards), `${fmtN(T.finished5)} with 5+ places`)}
+      ${kpi("Shares", fmtN(T.shares), "links copied or sent")}
+      ${kpi("Link visits", fmtN(T.visits), "postcard opened by someone else")}
+      ${kpi("Unique visitors", fmtN(T.visitors), "different people")}
+      ${kpi("Impressions", fmtN(T.impressions), "times any postcard was shown")}
+      ${kpi("Saves", fmtN(T.saves), `${fmtN(T.mapClicks)} Maps clicks`)}
+      ${kpi("App visits", fmtN(T.appOpens), `${fmtN(T.devices)} devices · ${fmtN(T.conversions)} came from a friend's link`)}
+    </div>
+
+    <div class="grid2" style="margin-top:12px">
+      <div class="card">
+        <h2>Sign-up to share funnel</h2>
+        <p class="sub">Unique devices reaching each step. % is of everyone who opened the app.</p>
+        ${funnelHtml(d.funnel)}
+      </div>
+      <div class="card">
+        <h2>Postcard link visits per day</h2>
+        <p class="sub">Times someone opened a shared postcard (owner previews excluded).</p>
+        ${columnChart("c-visits", d.daily.visits, "visit")}
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Accounts (${fmtN(accountRows.length)})</h2>
+      <p class="sub">Everyone who signed up. Visits, visitors and impressions are for that person's postcards. Click a column to sort.</p>
+      ${table("accounts", [
+        { key: "name", label: "Name" }, { key: "email", label: "Email" },
+        { key: "joined", label: "Joined", num: true, fmt: (v) => fmtDate(v) },
+        { key: "ref", label: "Tag", fmt: (v) => v ? `<span class="tag">${esc(v)}</span>` : "" },
+        { key: "postcards", label: "Postcards", num: true }, { key: "places", label: "Places ranked", num: true },
+        { key: "shares", label: "Shares", num: true }, { key: "visits", label: "Link visits", num: true },
+        { key: "visitorsN", label: "Unique visitors", num: true }, { key: "impressions", label: "Impressions", num: true },
+        { key: "saves", label: "Saves", num: true },
+        { key: "lastActive", label: "Last active", num: true, fmt: (v) => fmtDateTime(v) },
+      ], accountRows, "No accounts yet.")}
+      <button id="csv" style="margin-top:10px">⬇ Download accounts CSV</button>
+    </div>
+
+    <div class="card">
+      <h2>Postcards (${fmtN(tripRows.length)})</h2>
+      <p class="sub">Every postcard and how far it travelled.</p>
+      ${table("trips", [
+        { key: "city", label: "City" }, { key: "owner", label: "By" },
+        { key: "created", label: "Created", num: true, fmt: (v) => fmtDate(v) },
+        { key: "places", label: "Places", num: true },
+        { key: "finished", label: "Finished", fmt: (v) => (v ? "✓" : "") },
+        { key: "shares", label: "Shares", num: true }, { key: "visits", label: "Link visits", num: true },
+        { key: "visitorsN", label: "Unique visitors", num: true }, { key: "impressions", label: "Impressions", num: true },
+        { key: "saves", label: "Saves", num: true }, { key: "mapClicks", label: "Maps clicks", num: true },
+      ], tripRows, "No postcards yet.")}
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h2>New accounts per day</h2>
+        <p class="sub">Sign-ups over time.</p>
+        ${columnChart("c-accounts", d.daily.accounts, "account")}
+      </div>
+      <div class="card">
+        <h2>How these numbers are counted</h2>
+        <ul class="defs">
+          <li><b>Link visits</b>: each time someone other than the owner opened a shared postcard link, repeat opens included.</li>
+          <li><b>Unique visitors</b>: how many different devices opened shared links.</li>
+          <li><b>Impressions</b>: every time a postcard was displayed: link visits, plus owners previewing their own link, plus views of the example postcard.</li>
+          <li><b>Shares</b>: share-sheet sends and "Copy" taps. We can't see whether the message was actually sent.</li>
+          <li>Each device is one person. Someone using two devices counts twice.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Recent activity</h2>
+      <div class="tablewrap"><table><tbody>
+        ${d.recent.map((r) => `<tr><td class="muted">${fmtDateTime(r.ts)}</td><td>${who(r)} ${esc(r.event === "friend_opened" && r.role === "owner_preview" ? "previewed their own postcard link" : EVENT_LABELS[r.event] || r.event)}${r.city ? ` · ${esc(r.city)}` : ""}${r.detail && r.detail.place ? ` · ${esc(r.detail.place)}` : ""}</td><td>${r.ref ? `<span class="tag">${esc(r.ref)}</span>` : ""}</td></tr>`).join("") || `<tr><td class="muted">No activity yet.</td></tr>`}
+      </tbody></table></div>
+    </div>
+  `;
+
+  $("#range").onchange = (e) => { state.range = e.target.value; ls("range", state.range); render(); };
+  $("#hideTest").onchange = (e) => { state.hideTest = e.target.checked; ls("hideTest", state.hideTest ? "1" : "0"); render(); };
+  $("#refresh").onclick = () => start(ls("key"));
+  if ($("#logout")) $("#logout").onclick = () => { ls("key", null); viewLogin(); };
+  root.querySelectorAll("[data-table] th").forEach((th) => (th.onclick = () => {
+    const id = th.closest("table").dataset.table, key = th.dataset.sort, cur = state.sort[id] || {};
+    state.sort[id] = { key, dir: cur.key === key ? -(cur.dir || 1) : (th.classList.contains("num") ? -1 : 1) };
+    render();
+  }));
+  $("#csv").onclick = () => {
+    const head = ["name", "email", "joined", "tag", "postcards", "places_ranked", "shares", "link_visits", "unique_visitors", "impressions", "saves", "last_active"];
+    const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const lines = [head.join(",")].concat(accountRows.map((a) => [a.name, a.email, a.joined ? new Date(a.joined).toISOString() : "", a.ref, a.postcards, a.places, a.shares, a.visits, a.visitorsN, a.impressions, a.saves, a.lastActive ? new Date(a.lastActive).toISOString() : ""].map(q).join(",")));
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+    link.download = "postcard-accounts.csv"; link.click();
+  };
+  // Hover/focus tooltips on chart columns
+  const tip = $("#tip");
+  root.querySelectorAll("[data-tip]").forEach((el) => {
+    const show = () => { const r = el.getBoundingClientRect(); tip.textContent = el.dataset.tip; tip.style.display = "block"; tip.style.left = Math.min(innerWidth - tip.offsetWidth - 8, Math.max(8, r.left + r.width / 2 - tip.offsetWidth / 2)) + "px"; tip.style.top = (r.top - tip.offsetHeight - 6) + "px"; };
+    el.addEventListener("mouseenter", show); el.addEventListener("focus", show);
+    el.addEventListener("mouseleave", () => (tip.style.display = "none")); el.addEventListener("blur", () => (tip.style.display = "none"));
+  });
+}
+
+/* ---------- Sample data for ?demo ---------- */
+function demoRows() {
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const pick = (a) => a[Math.floor(rnd() * a.length)];
+  const names = ["Maya", "Jordan", "Priya", "Leo", "Sofia", "Ethan", "Aisha", "Noah", "Chloe", "Daniel", "Mei", "Omar"];
+  const cities = ["Lisbon", "Mexico City", "Tokyo", "Montreal", "Nashville", "Barcelona", "Seoul", "Paris"];
+  const out = []; const now = Date.now();
+  const add = (o) => out.push({ role: "owner", tripId: "", city: "", numPlaces: "", seconds: "", ref: "", account: "", detail: {}, ...o });
+  for (let i = 0; i < 40; i++) {
+    const uid = "dev" + i, ref = pick(["alex", "sam", "group-chat", "ig-story", ""]); let t = now - rnd() * 21 * 864e5;
+    add({ ts: t, event: "app_open", uid, ref });
+    if (rnd() < 0.15) continue;
+    add({ ts: t += 2e4, event: "signup_viewed", uid, ref });
+    if (rnd() < 0.25) continue;
+    const account = "acct" + i, name = names[i % names.length] + (i >= names.length ? " " + i : "");
+    add({ ts: t += 6e4, event: "account_created", uid, ref, account, detail: { name, email: name.toLowerCase().replace(/\s/g, "") + "@example.com" } });
+    if (rnd() < 0.1) continue;
+    const tripId = "trip" + i, city = pick(cities), n = 1 + Math.floor(rnd() * 9);
+    add({ ts: t += 3e4, event: "trip_started", uid, ref, account, tripId, city });
+    for (let k = 1; k <= n; k++) add({ ts: t += 4e4, event: "place_added", uid, ref, account, tripId, city, numPlaces: k });
+    add({ ts: t += 1e4, event: "ranking_finished", uid, ref, account, tripId, city, numPlaces: n, seconds: 40 * n + 30 });
+    add({ ts: t += 1e3, event: "owner_preview", uid, ref, account, tripId, city });
+    add({ ts: t, event: "friend_opened", role: "owner_preview", uid, ref, account, tripId, city });
+    if (n < 4 || rnd() < 0.45) continue;
+    add({ ts: t += 2e4, event: "list_shared", uid, ref, account, tripId, city, numPlaces: n });
+    const friends = Math.floor(rnd() * 6);
+    for (let f = 0; f < friends; f++) {
+      const fu = `f${i}_${f}`; let ft = t + rnd() * 3 * 864e5;
+      const opens = 1 + Math.floor(rnd() * 3);
+      for (let o = 0; o < opens; o++) add({ ts: ft += rnd() * 864e5, event: "friend_opened", role: "friend", uid: fu, tripId, city, numPlaces: n });
+      if (rnd() < 0.5) add({ ts: ft += 6e4, event: "friend_saved", role: "friend", uid: fu, tripId, city, detail: { place: "Place " + (1 + Math.floor(rnd() * n)) } });
+      if (rnd() < 0.4) add({ ts: ft += 6e4, event: "friend_map_click", role: "friend", uid: fu, tripId, city });
+      if (rnd() < 0.15) add({ ts: ft += 6e4, event: "friend_started_own", role: "friend", uid: fu, tripId, city });
+    }
+  }
+  for (let i = 0; i < 25; i++) add({ ts: now - rnd() * 21 * 864e5, event: "example_viewed", role: "example", uid: "dev" + Math.floor(rnd() * 40), tripId: "example", city: "Lisbon" });
+  return out.filter((r) => r.ts <= now && r.event !== "owner_preview");
+}
+
+DEMO ? start() : (ls("key") ? start(ls("key")) : viewLogin());
+</script>
+</body>
+</html>

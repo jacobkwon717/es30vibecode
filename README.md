@@ -51,9 +51,32 @@ Each meaningful action sends one row to a Google Sheet:
 1. Create a Google Sheet, then go to **Extensions → Apps Script** and paste in [`google-sheets/Code.gs`](google-sheets/Code.gs).
 2. Run the `setup` function once. It creates an **Events** tab and a **Summary** tab that computes the success metrics live (% who ranked 5+ places, median time, % who shared, friend opens/saves).
 3. **Deploy → New deployment → Web app**, Execute as *Me*, Access *Anyone*. Copy the `/exec` URL.
-4. Paste it into `CONFIG.LOG_URL` near the top of the `<script>` in `index.html`.
+4. Paste it into `LOG_URL` in `config.js`.
 
 If `LOG_URL` is empty, the app still works and prints events to the browser console.
+
+## Analytics dashboard (`admin.html`)
+
+Open `https://<user>.github.io/<repo>/admin.html` and enter your admin key. It shows:
+
+- **Headline numbers:** accounts, postcards, shares, link visits, unique visitors, impressions, saves, and app visits.
+- **Funnel:** from opening the app → sign-up → account → postcard → 5+ places → shared.
+- **Every account:** name, email, join date, recruit tag, and their postcards' shares, visits, visitors and impressions. You can sort columns and download it as a CSV.
+- **Every postcard:** with the same reach numbers.
+- **Daily charts and a recent-activity feed.**
+
+How the numbers are counted:
+- **Link visit:** someone other than the owner opened a shared postcard. Repeat opens count.
+- **Unique visitors:** distinct devices.
+- **Impression:** any time a postcard was shown, including link visits, owners previewing their own link, and example views.
+
+Rows tagged `?r=test` are hidden by default.
+
+**Setup:** after pasting the latest `Code.gs`, run `setup` once. It adds the `account` column and prints your **admin key**; run `showAdminKey` to see it again. Then publish the update: **Deploy → Manage deployments → ✏️ → Version: New version → Deploy**. The key lives in the Apps Script's properties, not in this public repo. Without it, the dashboard can't read anything.
+
+Preview with sample data: `admin.html?demo`.
+
+**Privacy:** names and emails of people who sign up are sent to your Google Sheet. Tell participants this when you recruit them.
 
 ## Putting it online (free)
 

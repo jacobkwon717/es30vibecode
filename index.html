@@ -9,6 +9,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✉️</text></svg>">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <script src="vendor/leaflet/leaflet.js"></script>
+<script src="config.js"></script>
 <style>
   /* ---------- Design tokens ---------- */
   :root {
@@ -157,13 +158,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-/* =====================================================================
-   CONFIG — paste your Google Apps Script web-app URL here (see README).
-   Leave it empty to run without logging (events print to the console).
-   ===================================================================== */
-const CONFIG = {
-  LOG_URL: "https://script.google.com/macros/s/AKfycbzbNDwghNnOE5qp_g36ab-AxVRxG7_ZQfdWG6TBXFnGYU7fPUzxhXxNfioGiI2TRB5nxw/exec",
-};
+// CONFIG.LOG_URL (the Google Sheets logger) lives in config.js, shared with admin.html.
 
 /* ---------- Constants ---------- */
 const TIERS = {
@@ -202,6 +197,7 @@ const ref = store("ref") || "";
 function log(event, data = {}) {
   const row = {
     ts: new Date().toISOString(), event, uid, ref,
+    account: (currentUser() || {}).id || "",
     role: data.role || "owner",
     tripId: data.tripId || "", city: data.city || "",
     numPlaces: data.numPlaces ?? "", seconds: data.seconds ?? "",
@@ -536,7 +532,8 @@ function viewAuth(mode) {
       const acct = { id: rid() + rid(), name, email, pw: await hashPw(pw), created: Date.now() };
       accounts[email] = acct; store("accounts", accounts);
       signIn(acct);
-      log("account_created");
+      log("account_created", { detail: { name, email } });
+      store("synced_" + acct.id, true);
     } else {
       const acct = accounts[email];
       if (!acct || acct.pw !== await hashPw(pw)) return err("Email or password is incorrect.");
@@ -902,6 +899,8 @@ function viewFriend(payload, isExample = false) {
   log(isExample ? "example_viewed" : "friend_opened", { ...base, detail: { ownerUid: trip.ownerUid } });
 }
 
+// Accounts made before the admin dashboard existed report their name/email once, so they show up there too.
+(() => { const u = currentUser(); if (u && !store("synced_" + u.id)) { log("account_synced", { detail: { name: u.name, email: u.email, created: new Date(u.created).toISOString() } }); store("synced_" + u.id, true); } })();
 render();
 </script>
 </body>

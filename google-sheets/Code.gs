@@ -7,10 +7,24 @@
  *     This creates the "Events" and "Summary" tabs.
  *  3. Deploy → New deployment → type "Web app".
  *     Execute as: Me. Who has access: Anyone. Click Deploy and copy the /exec URL.
- *  4. Paste that URL into CONFIG.LOG_URL at the top of index.html.
+ *  4. Paste that URL into LOG_URL in config.js.
+ *  5. The Execution log from `setup` prints your ADMIN KEY. Enter it on admin.html to
+ *     see the analytics dashboard. Run `showAdminKey` any time to see it again.
+ *
+ * After editing this file, publish the change: Deploy → Manage deployments → ✏️ →
+ * Version: "New version" → Deploy. The /exec URL stays the same.
  */
 
-const HEADERS = ['timestamp', 'event', 'uid', 'ref', 'role', 'tripId', 'city', 'numPlaces', 'seconds', 'detail'];
+const HEADERS = ['timestamp', 'event', 'uid', 'ref', 'role', 'tripId', 'city', 'numPlaces', 'seconds', 'detail', 'account'];
+
+// The dashboard's password. Stored in this script's properties, never in the public repo.
+function adminKey() {
+  const props = PropertiesService.getScriptProperties();
+  let key = props.getProperty('ADMIN_KEY');
+  if (!key) { key = Utilities.getUuid().replace(/-/g, '').slice(0, 16); props.setProperty('ADMIN_KEY', key); }
+  return key;
+}
+function showAdminKey() { Logger.log('Your admin key: ' + adminKey()); }
 
 function setup() {
   const ss = SpreadsheetApp.getActive();
@@ -29,7 +43,7 @@ function setup() {
     ['Median minutes to finish (5+ places)', '=IFERROR(MEDIAN(FILTER(Events!I2:I, Events!B2:B="ranking_finished", Events!H2:H>=5))/60,"")', 'Includes idle time'],
     ['Participants who shared', '=IFERROR(COUNTUNIQUE(FILTER(Events!C2:C, Events!B2:B="list_shared")),0)', ''],
     ['% who shared', '=IFERROR(B6/B2,0)', 'Target: at least 10%'],
-    ['Trips opened by a friend', '=IFERROR(COUNTUNIQUE(FILTER(Events!F2:F, Events!B2:B="friend_opened")),0)', 'Self-opens are excluded'],
+    ['Trips opened by a friend', '=IFERROR(COUNTUNIQUE(FILTER(Events!F2:F, Events!B2:B="friend_opened", Events!E2:E="friend")),0)', 'Self-opens are excluded'],
     ['Friend saves', '=COUNTIF(Events!B2:B,"friend_saved")', '"Saving for my trip" taps'],
     ['Friend map clicks', '=COUNTIF(Events!B2:B,"friend_map_click")', ''],
     ['Friends who started their own postcard', '=IFERROR(COUNTUNIQUE(FILTER(Events!C2:C, Events!B2:B="friend_started_own")),0)', 'Viral-loop signal'],
@@ -46,6 +60,7 @@ function setup() {
   sum.getRange('B5').setNumberFormat('0.0');
   sum.autoResizeColumns(1, 3);
   Logger.log('Created "Events" and "Summary" tabs in: ' + ss.getName() + '  ' + ss.getUrl());
+  showAdminKey();
   return events;
 }
 
@@ -63,6 +78,22 @@ function doPost(e) {
   }
 }
 
-function doGet() {
-  return ContentService.createTextOutput('Postcard logger is running.');
+// admin.html calls ?key=<admin key> to read every event as JSON.
+function doGet(e) {
+  const key = e && e.parameter && e.parameter.key;
+  if (!key) return ContentService.createTextOutput('Postcard logger is running.');
+  if (key !== adminKey()) return json({ error: 'Wrong admin key' });
+  const sheet = SpreadsheetApp.getActive().getSheetByName('Events');
+  const values = sheet ? sheet.getDataRange().getValues() : [HEADERS];
+  const head = values[0];
+  const rows = values.slice(1).map(function (r) {
+    const o = {};
+    head.forEach(function (h, i) { o[h] = r[i] instanceof Date ? r[i].toISOString() : r[i]; });
+    return o;
+  });
+  return json({ rows: rows, generated: new Date().toISOString() });
+}
+
+function json(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
